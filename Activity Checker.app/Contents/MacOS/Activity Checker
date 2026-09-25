@@ -1,0 +1,57 @@
+#!/bin/zsh
+set -eu
+setopt NO_BG_NICE
+
+SCRIPT_DIR="${0:A:h}"
+REPO_DIR="${SCRIPT_DIR}/../../.."
+REPO_DIR="${REPO_DIR:A}"
+URL="http://127.0.0.1:4318/"
+HEALTH_URL="${URL}api/health"
+RUNTIME_DIR="${REPO_DIR}/.runtime"
+LOG_FILE="${RUNTIME_DIR}/web.log"
+PID_FILE="${RUNTIME_DIR}/web.pid"
+
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+NPM_BIN="$(command -v npm || true)"
+
+server_ready() {
+  /usr/bin/curl -fsS --max-time 1 "${HEALTH_URL}" 2>/dev/null |
+    /usr/bin/grep -q '"app":"activity-checker"'
+}
+
+if server_ready; then
+  /usr/bin/open "${URL}"
+  exit 0
+fi
+
+if [[ -z "${NPM_BIN}" ]]; then
+  /usr/bin/osascript -e 'display alert "Activity Checker" message "Node.js/npm не найден. Установите Node.js 24+ и повторите запуск." as critical'
+  exit 1
+fi
+
+if /usr/sbin/lsof -nP -iTCP:4318 -sTCP:LISTEN >/dev/null 2>&1; then
+  /usr/bin/osascript -e 'display alert "Activity Checker" message "Порт 4318 занят другим процессом." as critical'
+  exit 1
+fi
+
+/bin/mkdir -p "${RUNTIME_DIR}"
+/usr/bin/nohup /bin/zsh -c '
+  set -eu
+  cd "$1"
+  if [[ ! -d node_modules ]]; then
+    "$2" install
+  fi
+  exec "$2" run dev
+' activity-checker-launcher "${REPO_DIR}" "${NPM_BIN}" >>"${LOG_FILE}" 2>&1 </dev/null &
+print -r -- "$!" >"${PID_FILE}"
+
+for _ in {1..300}; do
+  if server_ready; then
+    /usr/bin/open "${URL}"
+    exit 0
+  fi
+  /bin/sleep 0.1
+done
+
+/usr/bin/osascript -e 'display alert "Activity Checker" message "Не удалось запустить приложение. Подробности: .runtime/web.log" as critical'
+exit 1

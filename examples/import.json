@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "entities": [
+    {
+      "type": "Place",
+      "title": "Пример скалодрома",
+      "description": "Вымышленный пример формата импорта. Замените подтверждёнными данными.",
+      "country": "RS",
+      "city": "Belgrade",
+      "category": "Спорт",
+      "tags": ["climbing", "indoor"],
+      "url": "https://example.org/climbing",
+      "demo": true,
+      "externalId": "example-climbing"
+    }
+  ]
+}
