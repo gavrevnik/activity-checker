@@ -5,8 +5,9 @@ setopt NO_BG_NICE
 SCRIPT_DIR="${0:A:h}"
 REPO_DIR="${SCRIPT_DIR}/../../.."
 REPO_DIR="${REPO_DIR:A}"
-URL="http://127.0.0.1:4318/"
-HEALTH_URL="${URL}api/health"
+PUBLIC_URL="http://activity-checker.localhost/"
+INTERNAL_URL="http://127.0.0.1:4318/"
+HEALTH_URL="${INTERNAL_URL}api/health"
 RUNTIME_DIR="${REPO_DIR}/.runtime"
 LOG_FILE="${RUNTIME_DIR}/web.log"
 PID_FILE="${RUNTIME_DIR}/web.pid"
@@ -20,7 +21,7 @@ server_ready() {
 }
 
 if server_ready; then
-  /usr/bin/open "${URL}"
+  /usr/bin/open "${PUBLIC_URL}"
   exit 0
 fi
 
@@ -47,7 +48,7 @@ print -r -- "$!" >"${PID_FILE}"
 
 for _ in {1..300}; do
   if server_ready; then
-    /usr/bin/open "${URL}"
+    /usr/bin/open "${PUBLIC_URL}"
     exit 0
   fi
   /bin/sleep 0.1
