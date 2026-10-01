@@ -15,15 +15,7 @@ import {
 } from "../shared/model";
 import { api } from "./api";
 import { localDateTime, parseCalendarInput } from "../shared/dates";
-import {
-  Button,
-  Modal,
-  Field,
-  Busy,
-  Stats,
-  External,
-  audiences,
-} from "./components";
+import { Button, Modal, Field, Busy, Stats, audiences } from "./components";
 export function EntityForm({
   entity,
   scope,
@@ -202,6 +194,9 @@ export function EntityForm({
             </>
           )}
           <Field label="Адрес">{input("address")}</Field>
+          {values.type === "Place" && (
+            <Field label="Тип кухни">{input("cuisine")}</Field>
+          )}
           <Field label="Ссылка на оригинал">
             {input("url", { type: "url", placeholder: "https://…" })}
           </Field>
@@ -325,6 +320,7 @@ export function SourceForm({
             priority: source.priority,
             format: source.format,
             keyword: source.keyword,
+            minRating: source.minRating,
           }
         : {
             providerId: "structured",
@@ -339,6 +335,8 @@ export function SourceForm({
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const provider = providers.find((p) => p.id === values.providerId)!;
+  const hasField = (field: (typeof provider.configFields)[number]) =>
+    provider.configFields.includes(field);
   const set = (k: string, v: any) => setValues((s) => ({ ...s, [k]: v }));
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -376,29 +374,44 @@ export function SourceForm({
                   providerId: p.id,
                   url: p.defaultUrl || "",
                   name: p.name,
+                  scopeId:
+                    p.supportedScopes.includes("*") ||
+                    p.supportedScopes.includes(v.scopeId || scope.id)
+                      ? v.scopeId || scope.id
+                      : p.supportedScopes[0] || scope.id,
                 }));
               }}
             >
-              {providers.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                  {!p.implemented ? " · заготовка" : ""}
-                </option>
-              ))}
+              {providers
+                .filter((p) => !p.hiddenFromSources)
+                .map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                    {!p.implemented ? " · заготовка" : ""}
+                  </option>
+                ))}
             </select>
           </Field>
-          <Field label="География">
-            <select
-              value={values.scopeId}
-              onChange={(e) => set("scopeId", e.target.value)}
-            >
-              {scopes.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          </Field>
+          {hasField("scope") && (
+            <Field label="География">
+              <select
+                value={values.scopeId}
+                onChange={(e) => set("scopeId", e.target.value)}
+              >
+                {scopes
+                  .filter(
+                    (s) =>
+                      provider.supportedScopes.includes("*") ||
+                      provider.supportedScopes.includes(s.id),
+                  )
+                  .map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+              </select>
+            </Field>
+          )}
           <div className="full">
             <Field label="Название *">
               <input
@@ -408,17 +421,25 @@ export function SourceForm({
               />
             </Field>
           </div>
-          <div className="full">
-            <Field label="URL профиля, сайта или ленты">
-              <input
-                type="url"
-                placeholder="https://…"
-                value={values.url}
-                onChange={(e) => set("url", e.target.value)}
-              />
-            </Field>
-          </div>
-          {provider.providerType === "Website/Aggregator" && (
+          {hasField("url") && (
+            <div className="full">
+              <Field
+                label={
+                  provider.id === "telegram"
+                    ? "Seed-канал для рекомендаций"
+                    : "URL профиля, сайта или ленты"
+                }
+              >
+                <input
+                  type="url"
+                  placeholder="https://…"
+                  value={values.url}
+                  onChange={(e) => set("url", e.target.value)}
+                />
+              </Field>
+            </div>
+          )}
+          {hasField("format") && (
             <Field label="Формат">
               <select
                 value={values.format}
@@ -434,91 +455,65 @@ export function SourceForm({
               </select>
             </Field>
           )}
-          {provider.id === "ticketmaster" && (
+          {hasField("keyword") && provider.mcpTools?.length ? (
+            <div className="full">
+              <Field
+                label="Поисковые гипотезы · одна на строку"
+                hint={
+                  provider.id === "telegram"
+                    ? "До 30 гипотез. Один MTProto batch использует одну авторизованную сессию."
+                    : provider.id === "foursquare"
+                      ? "До 10 гипотез. Каждая использует один из 500 бесплатных месячных запросов; запуск только после подтверждения."
+                      : provider.id === "google-places-api"
+                        ? "До 30 гипотез. Дефолтный flow: unlimited IDs-only, затем Pro только для запросов с новыми placeId."
+                        : "До 30 гипотез. Executor объединит их в один Actor run."
+                }
+              >
+                <textarea
+                  rows={7}
+                  placeholder={
+                    provider.id === "telegram"
+                      ? "события белград ai\nрусскоязычный нетворкинг белград\nsquash beograd"
+                      : provider.id === "instagram"
+                        ? "squash belgrade\nsquash serbia\nsquash club beograd"
+                        : provider.id === "facebook-apify"
+                          ? "squash tournament belgrade\nsports meetup beograd"
+                          : provider.id === "foursquare"
+                            ? "squash club\npadel club\nindependent cinema"
+                            : provider.id === "google-places-api"
+                              ? "squash club\npadel community\nhiking tour\nfood experience"
+                              : "squash club\npadel club\nsports center"
+                  }
+                  value={values.keyword || ""}
+                  onChange={(e) => set("keyword", e.target.value)}
+                />
+              </Field>
+            </div>
+          ) : hasField("keyword") ? (
             <Field label="Ключевое слово">
               <input
                 value={values.keyword || ""}
                 onChange={(e) => set("keyword", e.target.value)}
               />
             </Field>
-          )}
-          <Field label="Язык источника">
-            <input
-              placeholder="ru / en / sr"
-              value={values.language || ""}
-              onChange={(e) => set("language", e.target.value)}
-            />
-          </Field>
-          <Field label="Аудитория">
-            <select
-              value={values.audience || "all"}
-              onChange={(e) => set("audience", e.target.value)}
+          ) : null}
+          {hasField("minRating") && (
+            <Field
+              label="Минимальный рейтинг Google"
+              hint="По умолчанию 4.0; шаг 0.5. Фильтр применяется самим Text Search."
             >
-              {Object.entries(audiences).map(([k, v]) => (
-                <option key={k} value={k}>
-                  {v}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Категории · через запятую">
-            <input
-              value={(values.categories || []).join(", ")}
-              onChange={(e) =>
-                set(
-                  "categories",
-                  e.target.value.split(",").map((s) => s.trimStart()),
-                )
-              }
-            />
-          </Field>
-          <Field label="Приоритет · 0–100">
-            <input
-              type="number"
-              min={0}
-              max={100}
-              value={values.priority}
-              onChange={(e) => set("priority", Number(e.target.value))}
-            />
-          </Field>
-          <div className="full">
-            <Field label="Заметка">
-              <textarea
-                rows={2}
-                value={values.notes || ""}
-                onChange={(e) => set("notes", e.target.value)}
+              <input
+                type="number"
+                min="0"
+                max="5"
+                step="0.5"
+                value={values.minRating ?? 4}
+                onChange={(event) =>
+                  set("minRating", Number(event.target.value))
+                }
               />
             </Field>
-          </div>
-        </div>
-        <label className="checkbox enable-source">
-          <input
-            type="checkbox"
-            checked={values.enabled}
-            onChange={(e) => set("enabled", e.target.checked)}
-          />
-          Включить источник
-        </label>
-        <div className="setup-box">
-          <h3>
-            {provider.implemented ? "Подключение" : "Адаптер ещё не реализован"}
-          </h3>
-          <ol>
-            {provider.steps.map((s) => (
-              <li key={s}>{s}</li>
-            ))}
-          </ol>
-          {provider.credentials.length > 0 && (
-            <pre>{provider.credentials.map((c) => c.key + "=").join("\n")}</pre>
           )}
-          <div className="doc-links">
-            {provider.docs.map((d) => (
-              <External key={d.url} href={d.url}>
-                {d.label}
-              </External>
-            ))}
-          </div>
-          <p>{provider.limitations}</p>
         </div>
         {error && (
           <p className="form-error" role="alert">
@@ -554,7 +549,7 @@ const sample = JSON.stringify(
   2,
 );
 const prompt =
-  'Найди реальные актуальные события, места, сообщества и организаторов в Белграде / Сербии. Проверь первоисточники. Для сообществ приоритет: русскоязычные, затем международные/expat, затем местные. Верни только JSON {"version":1,"entities":[...]}. Поля: type (Event|Place|Community|Organizer), title, description, country (RS), city (Belgrade или реальный город), category, tags (массив), languages (массив ru/en/sr), audience (all|russian-speaking|international|local), startAt/endAt (ISO 8601 с часовым поясом либо YYYY-MM-DD; только если подтверждено), venue, address, url (первоисточник конкретной записи), website, price, phone, externalId (стабильный ID если известен). Не выдумывай даты, контакты, цены и ссылки. Не добавляй неизвестные поля. Все URL только HTTP(S). Если данных нет, опусти поле.';
+  'Найди реальные актуальные события, места и сообщества в Белграде / Сербии. Проверь первоисточники. Для сообществ приоритет: русскоязычные, затем международные/expat, затем местные. Верни только JSON {"version":1,"entities":[...]}. Поля: type (Event|Place|Community), title, description, country (RS), city (Belgrade или реальный город), category, tags (массив), languages (массив ru/en/sr), audience (all|russian-speaking|international|local), startAt/endAt (ISO 8601 с часовым поясом либо YYYY-MM-DD; только если подтверждено), venue, address, url (первоисточник конкретной записи), website, price, phone, externalId (стабильный ID если известен). Не выдумывай даты, контакты, цены и ссылки. Не добавляй неизвестные поля. Все URL только HTTP(S). Если данных нет, опусти поле.';
 export function ImportForm({
   onClose,
   onSaved,

@@ -104,7 +104,6 @@ export function parseStructured(
           url: r.url ? absolute(r.url, url) : "",
           country: ctx.scope.country,
           city: ctx.scope.city || "",
-          languages: ctx.source.language ? [ctx.source.language] : [],
         },
         r.uid,
       );
@@ -138,7 +137,6 @@ export function parseStructured(
           country: ctx.scope.country,
           city: ctx.scope.city || "",
           startAt: validDate(r["ev:startdate"] || r["event:start"]),
-          languages: ctx.source.language ? [ctx.source.language] : [],
         },
         plain(r.guid || r.id) || undefined,
       );
@@ -253,10 +251,11 @@ export function structuredProvider(overrides: Partial<ProviderInfo> = {}) {
       name: "Сайт / RSS / ICS / JSON-LD",
       group: "Свои источники",
       providerType: "Website/Aggregator",
-      supportedEntityTypes: ["Event", "Place", "Community", "Organizer"],
+      supportedEntityTypes: ["Event", "Place", "Community"],
       supportedScopes: ["*"],
       implemented: true,
       mode: "ingestion",
+      configFields: ["scope", "url", "format"],
       description:
         "Публичная лента площадки, календарь или структурированные данные.",
       credentials: [],
@@ -264,7 +263,7 @@ export function structuredProvider(overrides: Partial<ProviderInfo> = {}) {
       steps: [
         "Добавьте URL сайта, RSS, ICS или JSON-ленты.",
         "Выберите формат или оставьте автоматическое определение.",
-        "Включите и проверьте источник. Проверка читает ленту, но не записывает активности.",
+        "Запустите чтение значком синхронизации в строке источника.",
       ],
       limitations:
         "Читает один URL, без обхода страниц, авторизации и JavaScript. HTML без schema.org/Event не поддерживается. ICS с повторами пропускаются с предупреждением.",

@@ -4,14 +4,12 @@ export const entityTypes = [
   "Event",
   "Place",
   "Community",
-  "Organizer",
 ] as const;
 export type EntityType = (typeof entityTypes)[number];
 export const typeLabels: Record<EntityType, string> = {
   Event: "События",
   Place: "Места",
   Community: "Сообщества",
-  Organizer: "Организаторы",
 };
 export const categories = [
   "Музыка",
@@ -62,6 +60,7 @@ export const entitySchema = z
     city: z.string().trim().max(160).default("Belgrade"),
     category: z.string().trim().max(160).default("Другое"),
     rawCategory: text.default(""),
+    cuisine: z.string().trim().max(300).default(""),
     tags: z.array(z.string().trim().max(80)).max(50).default([]),
     languages: z.array(z.string().trim().max(40)).max(20).default([]),
     audience: z
@@ -79,6 +78,11 @@ export const entitySchema = z
     phone: z.string().max(100).default(""),
     price: z.string().max(300).default(""),
     openingHours: text.default(""),
+    googleRating: z.number().min(0).max(5).nullable().default(null),
+    googleReviewCount: z.number().int().min(0).nullable().default(null),
+    googleRatingSource: text.default(""),
+    googleRatingCheckedAt: date.nullable().default(null),
+    memberCount: z.number().int().min(0).nullable().default(null),
     externalId: z.string().trim().max(500).optional(),
     knownIds: z.record(z.string().max(80), z.string().max(500)).default({}),
     demo: z.boolean().default(false),
@@ -101,6 +105,8 @@ export interface Entity extends NormalizedEntity {
   archived: boolean;
   favorite: boolean;
   notes: string;
+  filtered: boolean;
+  filterReasons: FilterRuleCode[];
   createdAt: string;
   updatedAt: string;
   sources: { id: string; name: string; providerId: string }[];
@@ -127,7 +133,8 @@ export const sourceSchema = z
     priority: z.number().int().min(0).max(100).default(50),
     notes: z.string().max(5000).default(""),
     format: z.enum(["auto", "json", "jsonld", "rss", "ics"]).default("auto"),
-    keyword: z.string().max(200).default(""),
+    keyword: z.string().max(6500).default(""),
+    minRating: z.number().min(0).max(5).multipleOf(0.5).default(4),
   })
   .strict();
 export type SourceInput = z.input<typeof sourceSchema>;
@@ -153,14 +160,148 @@ export interface SyncResult {
   created: number;
   updated: number;
   duplicates: number;
+  filtered: number;
   errors: number;
   warnings: string[];
   runId?: string;
+}
+export const filterRuleCodes = [
+  "pastEvents",
+  "telegramMinMembers",
+  "ticketsVenue",
+  "eventTitle",
+  "eventLocation",
+  "entityTags",
+] as const;
+export type FilterRuleCode = (typeof filterRuleCodes)[number];
+const filterTermsSchema = z.array(z.string().trim().min(1).max(300)).max(100);
+export const filteringRulesSchema = z
+  .object({
+    pastEvents: z.object({ enabled: z.boolean() }).strict(),
+    telegramMinMembers: z
+      .object({
+        enabled: z.boolean(),
+        minMembers: z.number().int().min(0).max(10_000_000),
+      })
+      .strict(),
+    ticketsVenue: z
+      .object({
+        enabled: z.boolean(),
+        venues: filterTermsSchema,
+        keywords: filterTermsSchema,
+        titleKeywords: filterTermsSchema.default([]),
+      })
+      .strict(),
+    eventTitle: z
+      .object({ enabled: z.boolean(), keywords: filterTermsSchema })
+      .strict(),
+    eventLocation: z
+      .object({ enabled: z.boolean(), keywords: filterTermsSchema })
+      .strict(),
+    entityTags: z
+      .object({ enabled: z.boolean(), keywords: filterTermsSchema })
+      .strict()
+      .default({ enabled: true, keywords: ["#For kids"] }),
+  })
+  .strict();
+export type FilteringRules = z.output<typeof filteringRulesSchema>;
+export const defaultFilteringRules: FilteringRules = {
+  pastEvents: { enabled: true },
+  telegramMinMembers: { enabled: true, minMembers: 200 },
+  ticketsVenue: {
+    enabled: true,
+    venues: ["Pan Teatar", "Opera i teatar Madlenianum", "Teatar Odeon"],
+    keywords: ["pozorište"],
+    titleKeywords: ["FEST 2026"],
+  },
+  eventTitle: { enabled: true, keywords: ["tribute", "Vaučer"] },
+  eventLocation: { enabled: true, keywords: ["Dečji"] },
+  entityTags: { enabled: true, keywords: ["#For kids"] },
+};
+export interface FilteringRulesView {
+  rules: FilteringRules;
+  counts: Record<FilterRuleCode, number> & { total: number };
+  pastEventsByScope: Record<string, number>;
+}
+export const telegramOperationValues = [
+  "searchPublicChats",
+  "channels.searchPosts",
+  "messages.searchGlobal",
+  "channels.getChannelRecommendations",
+] as const;
+export type TelegramOperationValue = (typeof telegramOperationValues)[number];
+export const syncOptionsSchema = z
+  .object({
+    confirmed: z.boolean().default(false),
+    startDate: z.iso.date().optional(),
+    endDate: z.iso.date().optional(),
+    categories: z.array(z.string().trim().min(1).max(80)).max(30).optional(),
+    resultsPerQuery: z.number().int().min(1).max(100).optional(),
+    maxItems: z.number().int().min(1).max(500).optional(),
+    operations: z
+      .array(z.enum(telegramOperationValues))
+      .min(1)
+      .max(4)
+      .optional(),
+    previewId: z.uuid().optional(),
+  })
+  .strict();
+export type SyncOptions = z.output<typeof syncOptionsSchema>;
+export interface SyncPlan {
+  sourceId: string;
+  providerId: string;
+  title: string;
+  summary: string;
+  requiresConfirmation: boolean;
+  expectedRequests: number | null;
+  minimumRequests: number;
+  maximumRequests: number;
+  rowsPerRequest?: number;
+  knownItems?: number;
+  startDate?: string;
+  endDate?: string;
+  categories?: string[];
+  resultsPerQuery?: number;
+  categoryOptions?: { value: string; label: string }[];
+  operations?: TelegramOperationValue[];
+  operationOptions?: { value: TelegramOperationValue; label: string }[];
+  parameters: { label: string; value: string }[];
+  warnings: string[];
+  paid?: { maxItems: number; maxChargeUsd: number };
+  limits?: { maxItems: number };
+  previewId?: string;
+  previewExpiresAt?: string;
+  exactPages?: number;
+  previewRequests?: number;
+  requestsAfterConfirmation?: number;
+  firstPageReused?: boolean;
+}
+const profileItem = z.string().trim().min(1).max(500);
+export const userProfileSchema = z
+  .object({
+    summary: z.string().trim().max(5000),
+    eventPreferences: z.array(profileItem).max(50),
+    communityPreferences: z.array(profileItem).max(50),
+    musicPreferences: z.array(profileItem).max(50),
+    artists: z.array(z.string().trim().min(1).max(200)).max(200),
+  })
+  .strict();
+export type UserProfileInput = z.input<typeof userProfileSchema>;
+export interface UserProfile extends z.output<typeof userProfileSchema> {
+  updatedAt: string;
 }
 export interface Credential {
   key: string;
   label: string;
 }
+export const sourceConfigFields = [
+  "scope",
+  "url",
+  "format",
+  "keyword",
+  "minRating",
+] as const;
+export type SourceConfigField = (typeof sourceConfigFields)[number];
 export interface ProviderInfo {
   id: string;
   name: string;
@@ -171,6 +312,7 @@ export interface ProviderInfo {
   implemented: boolean;
   mode: "ingestion" | "manual" | "discovery" | "enrichment";
   description: string;
+  configFields: SourceConfigField[];
   credentials: Credential[];
   registration?: { service: string; url: string };
   setupMessage?: string;
@@ -178,6 +320,15 @@ export interface ProviderInfo {
   steps: string[];
   limitations: string;
   defaultUrl?: string;
+  manualSyncOnly?: boolean;
+  requiresSyncConfirmation?: boolean;
+  modelCallable?: boolean;
+  mcpServer?: string;
+  mcpTools?: { name: string; description: string }[];
+  webSearchLlm?: boolean;
+  hiddenFromSources?: boolean;
+  browserOnly?: boolean;
+  otherSource?: boolean;
 }
 export interface Connection {
   status:
@@ -196,6 +347,20 @@ export interface SourceView extends Source {
   connection: Connection;
   provider: ProviderInfo;
   itemCount: number;
+  quotaUsage?: {
+    sku: "pro";
+    used: number;
+    limit: number;
+    remaining: number;
+    billingMonth: string;
+  };
+  enterpriseQuotaUsage?: {
+    sku: "enterprise";
+    used: number;
+    limit: number;
+    remaining: number;
+    billingMonth: string;
+  };
 }
 export interface Candidate {
   id: string;

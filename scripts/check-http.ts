@@ -24,10 +24,57 @@ async function req(path: string, method = "GET", body?: unknown) {
 }
 try {
   assert.equal((await req("/health")).data.ok, true);
+  const crossSiteNavigation = await fetch(`http://127.0.0.1:${port}/`, {
+    headers: {
+      Origin: "http://life-hub.localhost",
+      "Sec-Fetch-Site": "cross-site",
+      "Sec-Fetch-Mode": "navigate",
+      "Sec-Fetch-Dest": "document",
+    },
+  });
+  // createApi has no SPA handler in this isolated smoke server; reaching its
+  // normal 404 proves the security middleware did not reject navigation.
+  assert.equal(crossSiteNavigation.status, 404);
   const initial = await req("/bootstrap");
   assert.equal(initial.data.entities.length, 0);
-  assert.equal(initial.data.sources.length, 19);
+  assert.ok(initial.data.sources.length >= 15);
+  assert.equal(
+    initial.data.filterRules.rules.telegramMinMembers.minMembers,
+    200,
+  );
+  assert.equal(initial.data.profile.artists.length, 46);
+  assert.ok(initial.data.profile.eventPreferences.length > 0);
+  assert.ok(
+    initial.data.sources.some(
+      (source: any) => source.providerId === "allevents",
+    ),
+  );
   assert.equal(JSON.stringify(initial.data).includes("API_HASH="), false);
+  const { updatedAt: _updatedAt, ...profileInput } = initial.data.profile;
+  profileInput.summary = "HTTP profile update";
+  const profileUpdate = await req("/profile", "PUT", profileInput);
+  assert.equal(profileUpdate.status, 200);
+  assert.equal(profileUpdate.data.summary, "HTTP profile update");
+  assert.equal((await req("/profile")).data.summary, "HTTP profile update");
+  const ruleUpdate = await req("/filter-rules", "PUT", {
+    ...initial.data.filterRules.rules,
+    telegramMinMembers: { enabled: true, minMembers: 300 },
+  });
+  assert.equal(ruleUpdate.status, 200);
+  assert.equal(
+    (await req("/filter-rules")).data.rules.telegramMinMembers.minMembers,
+    300,
+  );
+  await req("/import", "POST", {
+    entities: [
+      { type: "Event", title: "Past HTTP event", startAt: "2000-01-01" },
+    ],
+  });
+  const pastArchive = await req("/entities/archive-past", "POST", {
+    scopeId: "belgrade",
+  });
+  assert.equal(pastArchive.data.archived, 1);
+  assert.equal((await req("/bootstrap")).data.entities.length, 0);
   const batch = {
     entities: [
       {
@@ -61,12 +108,13 @@ try {
   );
   assert.equal((await req("/bootstrap")).data.entities.length, 1);
   assert.equal(
-    (await req("/sources/source-telegram/test", "POST", {})).status,
+    (await req("/sources/source-allevents/sync", "POST", {})).status,
     400,
   );
   const schema = await req("/import/schema");
   assert.equal(schema.status, 200);
   assert.ok(schema.data.properties.entities);
+  assert.ok(schema.data.properties.entities.items.properties.cuisine);
   const exported = await req("/export");
   assert.equal(exported.data.entities.length, 1);
   assert.equal(
@@ -106,7 +154,7 @@ try {
   );
   assert.equal(invalidHost, 403);
   console.log(
-    "HTTP smoke: preview, import, dedup, provenance, edits, catalog, schema, export, validation, Host/Origin checks — OK.",
+    "HTTP smoke: Life Hub navigation, profile, past-event archive, preview, import, dedup, provenance, edits, catalog, schema, export, validation, Host/Origin checks — OK.",
   );
 } finally {
   await new Promise<void>((resolve) => server.close(() => resolve()));

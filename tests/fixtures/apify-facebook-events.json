@@ -1,0 +1,19 @@
+[
+  {
+    "id": "fb-event-101",
+    "name": "Belgrade Product Meetup",
+    "description": "Talks and networking for product people.",
+    "utcStartDate": "2026-10-20T17:00:00Z",
+    "utcEndDate": "2026-10-20T20:00:00Z",
+    "url": "https://www.facebook.com/events/101",
+    "location": {
+      "name": "Impact Hub Belgrade",
+      "address": "Makedonska 21",
+      "city": "Belgrade",
+      "latitude": 44.815,
+      "longitude": 20.463
+    },
+    "categories": ["Technology", "Networking"],
+    "organizers": ["Product Community Serbia"]
+  }
+]

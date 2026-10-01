@@ -6,7 +6,7 @@ import {
   overpassQuery,
   normalizeOSM,
 } from "../server/providers/overpass";
-import { getProvider } from "../server/providers/registry";
+import { getProvider, providers } from "../server/providers/registry";
 import { canonicalUrl } from "../server/normalize";
 import { entitySchema } from "../shared/model";
 import { inPeriod } from "../shared/dates";
@@ -27,16 +27,153 @@ const context = () => ({
   scope: store.scope("belgrade"),
   secrets: {},
 });
+function enableOverpass() {
+  const source = store.source("source-overpass");
+  store.saveSource(
+    { providerId: source.providerId, name: source.name, enabled: true },
+    source.id,
+  );
+}
 describe("providers", () => {
-  it("does not treat a configured secret as a working skeleton", () => {
+  it("exposes the implemented Telegram tool when credentials are configured", () => {
     const ctx = context();
     ctx.source.providerId = "telegram";
-    const state = getProvider("telegram").connectionStatus({
+    const provider = getProvider("telegram");
+    const state = provider.connectionStatus({
       ...ctx,
       secrets: { TELEGRAM_API_ID: "1", TELEGRAM_API_HASH: "key" },
     });
-    expect(state.status).toBe("setup_required");
-    expect(state.canSync).toBe(false);
+    expect(provider.modelCallable).toBe(true);
+    expect(provider.mcpTools?.map((tool) => tool.name)).toEqual([
+      "telegram_status",
+      "telegram_discovery_batch",
+      "telegram_search_public_chats",
+      "telegram_search_posts",
+      "telegram_search_global",
+      "telegram_channel_recommendations",
+      "telegram_sample_channel_posts",
+      "telegram_query_history",
+      "telegram_mark_query_relevance",
+    ]);
+    expect(state.status).toBe("ready");
+    expect(state.canSync).toBe(true);
+  });
+  it("exposes every implemented Apify search through MCP", () => {
+    for (const id of ["instagram", "facebook-apify", "google-places"]) {
+      const provider = getProvider(id);
+      expect(provider.modelCallable).toBe(true);
+      expect(provider.mcpServer).toBe("Activity Checker Apify");
+      expect(provider.mcpTools?.[0].name).toBe("apify_status");
+    }
+    expect(getProvider("facebook-apify").mcpTools?.[1].name).toBe(
+      "apify_facebook_events_search",
+    );
+  });
+  it("keeps Apify Google Maps and exposes official Google Places separately", () => {
+    expect(getProvider("google-places")).toMatchObject({
+      name: "Google Maps Places · Apify",
+      mcpServer: "Activity Checker Apify",
+    });
+    expect(getProvider("google-places-api")).toMatchObject({
+      name: "Google Places API (New)",
+      mcpServer: "Activity Checker Google Places",
+      configFields: ["scope", "keyword", "minRating"],
+    });
+    expect(
+      getProvider("google-places-api").mcpTools?.map((tool) => tool.name),
+    ).toEqual([
+      "google_places_status",
+      "google_places_discovery_batch",
+      "google_places_text_search_ids",
+      "google_places_text_search_pro",
+      "google_places_text_search_enterprise",
+      "google_places_store_llm_ratings",
+    ]);
+  });
+  it("classifies sources by use and hides deprecated PredictHQ", () => {
+    expect(getProvider("tickets").group).toBe("API Агрегаторы");
+    expect(getProvider("telegram").group).toBe("MCP");
+    expect(getProvider("meetup")).toMatchObject({
+      group: "LLM Web",
+      webSearchLlm: true,
+      credentials: [],
+    });
+    expect(getProvider("eventbrite")).toMatchObject({
+      group: "LLM Web",
+      webSearchLlm: true,
+      credentials: [],
+    });
+    expect(getProvider("belgrade-beat")).toMatchObject({
+      group: "API Агрегаторы",
+      implemented: true,
+      configFields: [],
+    });
+    expect(getProvider("belgrade-beat-web")).toMatchObject({
+      group: "LLM Web",
+      webSearchLlm: true,
+      credentials: [],
+    });
+    expect(getProvider("predicthq").hiddenFromSources).toBe(true);
+    expect(getProvider("facebook-scrapecreators")).toMatchObject({
+      hiddenFromSources: true,
+      credentials: [],
+    });
+    expect(getProvider("ticketmaster").otherSource).toBe(true);
+  });
+  it("declares only the source settings consumed by each adapter", () => {
+    expect(
+      Object.fromEntries(
+        providers.map((provider) => [provider.id, provider.configFields]),
+      ),
+    ).toEqual({
+      overpass: ["scope"],
+      ticketmaster: ["scope", "keyword"],
+      structured: ["scope", "url", "format"],
+      manual: [],
+      "belgrade-beat": [],
+      afisha: ["url"],
+      bilet: ["scope", "url", "keyword"],
+      tickets: ["url", "keyword"],
+      "serbia-travel": ["scope", "url", "keyword"],
+      allevents: ["url", "keyword"],
+      telegram: ["url", "keyword"],
+      foursquare: ["scope", "keyword"],
+      "google-places-api": ["scope", "keyword", "minRating"],
+      instagram: ["keyword"],
+      "facebook-apify": ["keyword"],
+      "google-places": ["keyword"],
+      "facebook-scrapecreators": [],
+      meetup: [],
+      eventbrite: [],
+      "belgrade-beat-web": [],
+      predicthq: [],
+    });
+  });
+  it("allows direct sync of legacy disabled sources without an enable toggle", () => {
+    const source = store.source("source-overpass");
+    expect(source.enabled).toBe(false);
+    const state = overpass.connectionStatus({
+      source,
+      scope: store.scope("belgrade"),
+      secrets: {},
+    });
+    expect(state.status).toBe("ready");
+    expect(state.canSync).toBe(true);
+  });
+  it("runs ordinary API aggregators globally without using the legacy enabled flag", async () => {
+    const selected = ["afisha", "belgrade-beat", "bilet", "tickets"];
+    const syncMocks = selected.map((id) =>
+      vi.spyOn(getProvider(id), "sync").mockResolvedValue({ items: [] }),
+    );
+    const excludedMocks = ["overpass", "telegram"].map((id) =>
+      vi.spyOn(getProvider(id), "sync").mockResolvedValue({ items: [] }),
+    );
+    const result = await new SyncService(store).all("belgrade");
+    expect(result.map((item) => item.sourceId).sort()).toEqual(
+      selected.map((id) => `source-${id}`).sort(),
+    );
+    syncMocks.forEach((mock) => expect(mock).toHaveBeenCalledOnce());
+    excludedMocks.forEach((mock) => expect(mock).not.toHaveBeenCalled());
   });
   it("missing credentials disable Ticketmaster without failing app", () => {
     const ctx = context();
@@ -159,6 +296,7 @@ describe("providers", () => {
     expect(isPrivateAddress("1.1.1.1")).toBe(false);
   });
   it("records a sync and persists cooldown", async () => {
+    enableOverpass();
     vi.spyOn(overpass, "sync").mockResolvedValue({
       items: [
         {
@@ -181,7 +319,58 @@ describe("providers", () => {
       "сек.",
     );
   });
+  it("drops past events returned by a local listing before ingestion", async () => {
+    const source = store.source("source-afisha");
+    store.saveSource(
+      {
+        providerId: source.providerId,
+        name: source.name,
+        url: source.url,
+        scopeId: source.scopeId,
+        enabled: true,
+      },
+      source.id,
+    );
+    const provider = getProvider("afisha");
+    vi.spyOn(provider, "sync").mockResolvedValue({
+      items: [
+        {
+          externalId: "past",
+          url: "https://afisha.rs/past",
+          rawText: "Past",
+          payload: {
+            normalized: {
+              type: "Event",
+              title: "Past event",
+              startAt: "2000-01-01",
+            },
+          },
+        },
+        {
+          externalId: "future",
+          url: "https://afisha.rs/future",
+          rawText: "Future",
+          payload: {
+            normalized: {
+              type: "Event",
+              title: "Future event",
+              startAt: "2099-01-01",
+            },
+          },
+        },
+      ],
+    });
+    const result = await new SyncService(store).run(source.id);
+    expect(result).toMatchObject({ fetched: 2, created: 2, filtered: 1 });
+    expect(store.entities().map((entity) => entity.title)).toEqual([
+      "Future event",
+    ]);
+    expect("warnings" in result ? result.warnings : []).toContain(
+      "Скрыто статичными правилами фильтрации: 1.",
+    );
+  });
   it("persists provider failures with no fabricated records", async () => {
+    enableOverpass();
     vi.spyOn(overpass, "sync").mockRejectedValue(new Error("HTTP 429"));
     const sync = new SyncService(store);
     await expect(sync.run("source-overpass")).rejects.toThrow("HTTP 429");

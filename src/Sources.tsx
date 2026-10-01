@@ -1,6 +1,5 @@
 import { useState } from "react";
 import {
-  Plus,
   RefreshCw,
   Plug,
   ChevronDown,
@@ -9,24 +8,17 @@ import {
   Link,
   Pause,
   Info,
-  Search,
   ArrowUpRight,
   History,
   UserRound,
 } from "lucide-react";
-import type {
-  Candidate,
-  ProviderInfo,
-  Scope,
-  SourceView,
-  SyncRun,
-} from "../shared/model";
+import type { Candidate, Scope, SourceView, SyncRun } from "../shared/model";
 import { Button, External, Empty, Stats, Busy } from "./components";
 const statusLabels: Record<string, string> = {
   disabled: "Выключен",
   not_configured: "Нужен ключ",
   setup_required: "Нужен адаптер",
-  ready: "Готов к проверке",
+  ready: "Готов",
   connected: "Подключён",
   error: "Ошибка",
 };
@@ -39,41 +31,37 @@ const formatTime = (value: string | null) =>
         minute: "2-digit",
       })
     : "Ещё не запускался";
+const hasWorkingConnection = (source: SourceView) =>
+  source.connection.status === "connected" ||
+  (source.provider.modelCallable === true &&
+    source.connection.credentials.every((credential) => credential.present));
 export function Sources({
   sources,
-  providers,
   scopes,
   scope,
   candidates,
   runs,
   busy,
   onEdit,
-  onAdd,
   onAction,
   onSyncAll,
   onCandidate,
   onOpen,
-  onRefresh,
 }: {
   sources: SourceView[];
-  providers: ProviderInfo[];
   scopes: Scope[];
   scope: Scope;
   candidates: Candidate[];
   runs: SyncRun[];
   busy: string;
   onEdit: (source: SourceView) => void;
-  onAdd: () => void;
   onAction: (source: SourceView, action: "test" | "sync") => void;
   onSyncAll: () => void;
   onCandidate: (id: string, action: "accept" | "ignore") => void;
   onOpen: (id: string) => void;
-  onRefresh: () => void;
 }) {
   const [tab, setTab] = useState("connections"),
-    [expanded, setExpanded] = useState<string | null>(null),
-    [search, setSearch] = useState(""),
-    [onlyEnabled, setOnlyEnabled] = useState(false);
+    [expanded, setExpanded] = useState<string | null>(null);
   const local = sources.filter((s) => {
     const location = scopes.find((l) => l.id === s.scopeId);
     return (
@@ -81,15 +69,22 @@ export function Sources({
       (!scope.city || location?.city === scope.city)
     );
   });
-  const visible = local.filter(
+  const listed = local.filter(
     (s) =>
-      (!onlyEnabled || s.enabled) &&
-      [s.name, s.provider.description, s.url]
-        .join(" ")
-        .toLowerCase()
-        .includes(search.toLowerCase()),
+      s.provider.group !== "Свои источники" && !s.provider.hiddenFromSources,
   );
-  const groups = [...new Set(providers.map((p) => p.group))];
+  const primary = listed.filter((s) => !s.provider.otherSource);
+  const other = listed.filter((s) => s.provider.otherSource);
+  const selectedSources = tab === "other" ? other : primary;
+  const visible = selectedSources;
+  const preferredGroups = ["API Агрегаторы", "MCP", "LLM Web", "Другое"];
+  const availableGroups = new Set(
+    visible.map((source) => source.provider.group),
+  );
+  const groups = [
+    ...preferredGroups.filter((group) => availableGroups.has(group)),
+    ...[...availableGroups].filter((group) => !preferredGroups.includes(group)),
+  ];
   const discovered = candidates.filter(
     (c) => c.status === "new" && (!scope.city || c.scopeId === scope.id),
   );
@@ -98,20 +93,7 @@ export function Sources({
       <div className="page-heading">
         <div className="heading-title">
           <h1>Источники</h1>
-          <span className="count">{local.length}</span>
-        </div>
-        <div className="actions">
-          <Button
-            disabled={!!busy || !local.some((s) => s.connection.canSync)}
-            onClick={onSyncAll}
-          >
-            {busy === "all" ? <Busy /> : <RefreshCw size={15} />}
-            Синхронизировать включённые
-          </Button>
-          <Button primary onClick={onAdd}>
-            <Plus size={16} />
-            Источник
-          </Button>
+          <span className="count">{listed.length}</span>
         </div>
       </div>
       <div className="type-tabs">
@@ -120,7 +102,14 @@ export function Sources({
           onClick={() => setTab("connections")}
         >
           <Plug size={15} />
-          Подключения<small>{local.filter((s) => s.enabled).length}</small>
+          Подключения<small>{primary.length}</small>
+        </button>
+        <button
+          className={tab === "other" ? "selected" : ""}
+          onClick={() => setTab("other")}
+        >
+          <Pause size={15} />
+          Другие<small>{other.length}</small>
         </button>
         <button
           className={tab === "discovered" ? "selected" : ""}
@@ -137,51 +126,39 @@ export function Sources({
           История
         </button>
       </div>
-      {tab === "connections" && (
+      {(tab === "connections" || tab === "other") && (
         <>
-          <div className="filter-bar">
-            <label className="search">
-              <Search size={17} />
-              <input
-                aria-label="Поиск источников"
-                placeholder="Название или платформа"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </label>
-            <label className="checkbox">
-              <input
-                type="checkbox"
-                checked={onlyEnabled}
-                onChange={(e) => setOnlyEnabled(e.target.checked)}
-              />
-              Только включённые
-            </label>
-            <span className="filter-note">Обновление вручную</span>
-          </div>
-          <div className="source-help">
-            <KeyRound size={15} />
-            <span>
-              Ключи — в <code>.env.local</code>. После изменения обновите
-              статусы подключения. Перезапуск не нужен.
-            </span>
-            <button
-              className="text-button refresh-status"
-              disabled={!!busy}
-              onClick={onRefresh}
-            >
-              <RefreshCw size={12} />
-              Обновить статусы
-            </button>
-          </div>
+          {tab === "other" && (
+            <div className="source-help">
+              <Info size={15} />
+              <span>
+                Здесь собраны вспомогательные источники. OpenStreetMap можно
+                синхронизировать вручную, а Ticketmaster вынесен сюда из-за
+                слабого покрытия Белграда и Сербии.
+              </span>
+            </div>
+          )}
           {groups.map((group) => {
             const list = visible.filter((s) => s.provider.group === group);
             return list.length ? (
               <section className="source-group" key={group}>
-                <h2>
-                  {group}
-                  <small>{list.length}</small>
-                </h2>
+                <div className="source-group-heading">
+                  <h2>
+                    {group}
+                    <small>{list.length}</small>
+                  </h2>
+                  {group === "API Агрегаторы" && (
+                    <Button
+                      disabled={
+                        !!busy || !list.some((s) => s.connection.canSync)
+                      }
+                      onClick={onSyncAll}
+                    >
+                      {busy === "all" ? <Busy /> : <RefreshCw size={15} />}
+                      Запустить
+                    </Button>
+                  )}
+                </div>
                 <div className="source-list">
                   {list.map((s) => (
                     <div
@@ -201,15 +178,38 @@ export function Sources({
                         >
                           <strong>
                             {s.name}
-                            {s.provider.registration && (
+                            {hasWorkingConnection(s) && (
                               <span
-                                className="registration-badge"
-                                title={`Для API-доступа нужен аккаунт ${s.provider.registration.service}. Инструкция — в подключении.`}
+                                className="working-connection-check"
+                                title={
+                                  s.connection.status === "connected"
+                                    ? "Подключение проверено, источник работает"
+                                    : s.provider.mcpTools?.length
+                                      ? "Источник доступен модели через MCP"
+                                      : "Источник доступен модели через локальный tool"
+                                }
+                                aria-label={
+                                  s.connection.status === "connected"
+                                    ? "Подключение проверено, источник работает"
+                                    : s.provider.mcpTools?.length
+                                      ? "Источник доступен модели через MCP"
+                                      : "Источник доступен модели через локальный tool"
+                                }
+                                role="img"
                               >
-                                <UserRound size={10} aria-hidden="true" />
-                                Регистрация
+                                <Check size={11} aria-hidden="true" />
                               </span>
                             )}
+                            {s.provider.registration &&
+                              !hasWorkingConnection(s) && (
+                                <span
+                                  className="registration-badge"
+                                  title={`Для API-доступа нужен аккаунт ${s.provider.registration.service}. Инструкция — в подключении.`}
+                                >
+                                  <UserRound size={10} aria-hidden="true" />
+                                  Регистрация
+                                </span>
+                              )}
                           </strong>
                           <span>{s.provider.description}</span>
                         </button>
@@ -218,14 +218,43 @@ export function Sources({
                             className={`connection-badge ${s.connection.status}`}
                           >
                             <i />
-                            {s.provider.mode === "manual" && s.enabled
-                              ? "Ручной импорт"
-                              : statusLabels[s.connection.status]}
+                            {s.provider.webSearchLlm
+                              ? "LLM Web"
+                              : s.provider.browserOnly
+                                ? "Только браузер"
+                                : s.provider.mode === "manual"
+                                  ? "Ручной импорт"
+                                  : statusLabels[s.connection.status]}
                             {!s.provider.implemented &&
-                            s.connection.status === "disabled"
+                            s.connection.status === "disabled" &&
+                            !s.provider.webSearchLlm
                               ? " · заготовка"
                               : ""}
                           </span>
+                          {s.quotaUsage && (
+                            <span
+                              className="source-quota"
+                              title={`Google Places Pro за ${s.quotaUsage.billingMonth}: использовано ${s.quotaUsage.used}, осталось ${s.quotaUsage.remaining}`}
+                            >
+                              Pro {s.quotaUsage.used.toLocaleString("ru-RU")}/
+                              {s.quotaUsage.limit.toLocaleString("ru-RU")}
+                            </span>
+                          )}
+                          {s.enterpriseQuotaUsage && (
+                            <span
+                              className="source-quota"
+                              title={`Google Places Enterprise за ${s.enterpriseQuotaUsage.billingMonth}: использовано ${s.enterpriseQuotaUsage.used}, осталось ${s.enterpriseQuotaUsage.remaining}`}
+                            >
+                              Enterprise{" "}
+                              {s.enterpriseQuotaUsage.used.toLocaleString(
+                                "ru-RU",
+                              )}
+                              /
+                              {s.enterpriseQuotaUsage.limit.toLocaleString(
+                                "ru-RU",
+                              )}
+                            </span>
+                          )}
                           <small>
                             {s.itemCount
                               ? `${s.itemCount} записей`
@@ -234,14 +263,28 @@ export function Sources({
                           </small>
                         </div>
                         <div className="source-row-actions">
-                          <Button onClick={() => onEdit(s)}>Настроить</Button>
-                          <Button
-                            title="Синхронизировать источник"
-                            disabled={!!busy || !s.connection.canSync}
-                            onClick={() => onAction(s, "sync")}
-                          >
-                            {busy === s.id ? <Busy /> : <RefreshCw size={15} />}
-                          </Button>
+                          {!s.provider.webSearchLlm && (
+                            <>
+                              {!!s.provider.configFields.length && (
+                                <Button onClick={() => onEdit(s)}>
+                                  Настроить
+                                </Button>
+                              )}
+                              {s.provider.group !== "MCP" && (
+                                <Button
+                                  title="Запустить источник"
+                                  disabled={!!busy || !s.connection.canSync}
+                                  onClick={() => onAction(s, "sync")}
+                                >
+                                  {busy === s.id ? (
+                                    <Busy />
+                                  ) : (
+                                    <RefreshCw size={15} />
+                                  )}
+                                </Button>
+                              )}
+                            </>
+                          )}
                           <button
                             className="icon-button"
                             aria-label={"Инструкция: " + s.name}
@@ -255,99 +298,150 @@ export function Sources({
                         </div>
                       </div>
                       {expanded === s.id && (
-                        <div className="source-details">
-                          <div className="setup-column">
-                            <h3>Подключение</h3>
-                            <ol>
-                              {s.provider.steps.map((step) => (
-                                <li key={step}>{step}</li>
-                              ))}
-                            </ol>
-                            <div className="doc-links">
-                              {s.provider.registration && (
-                                <External href={s.provider.registration.url}>
-                                  Аккаунт {s.provider.registration.service}
-                                </External>
-                              )}
-                              {s.provider.docs.map((d) => (
-                                <External key={d.url} href={d.url}>
-                                  {d.label}
-                                </External>
-                              ))}
-                              {s.url && (
-                                <External href={s.url}>
-                                  Открыть источник
-                                </External>
-                              )}
-                            </div>
-                            <p className="limitation">
-                              <Info size={14} />
-                              {s.provider.limitations}
-                            </p>
-                          </div>
-                          <div className="connection-column">
-                            {s.connection.credentials.length > 0 ? (
-                              <div className="credentials">
-                                {s.connection.credentials.map((c) => (
-                                  <div key={c.key}>
-                                    <code>{c.key}</code>
-                                    <span
-                                      className={
-                                        c.present ? "credential-present" : ""
-                                      }
-                                    >
-                                      {c.present ? (
-                                        <>
-                                          <Check size={13} />
-                                          Задан
-                                        </>
-                                      ) : (
-                                        <>
-                                          <KeyRound size={13} />
-                                          Не задан
-                                        </>
-                                      )}
-                                    </span>
-                                  </div>
+                        <div
+                          className={`source-details ${s.provider.group === "MCP" ? "mcp-details" : ""}`}
+                        >
+                          {s.provider.webSearchLlm ? (
+                            <section className="llm-web-panel">
+                              <h3>Поиск через LLM Web</h3>
+                              <p>
+                                Для этого сервиса не настраивается локальный
+                                API-адаптер. Модель ищет индексированные
+                                публичные страницы сервиса через Web Search и
+                                возвращает найденные события или сообщества для
+                                проверки перед импортом.
+                              </p>
+                              <div className="doc-links">
+                                {s.provider.docs.map((doc) => (
+                                  <External key={doc.url} href={doc.url}>
+                                    {doc.label}
+                                  </External>
                                 ))}
                               </div>
-                            ) : (
-                              <p className="muted">API-ключ не требуется</p>
-                            )}
-                            <p className={s.lastError ? "error-text" : "muted"}>
-                              {s.connection.message}
-                            </p>
-                            <div className="actions">
-                              <Button
-                                disabled={!!busy || !s.connection.canTest}
-                                onClick={() => onAction(s, "test")}
-                              >
-                                {busy === s.id ? <Busy /> : <Plug size={14} />}
-                                Проверить
-                              </Button>
-                              <Button
-                                primary
-                                disabled={!!busy || !s.connection.canSync}
-                                onClick={() => onAction(s, "sync")}
-                              >
-                                <RefreshCw size={14} />
-                                Синхронизировать
-                              </Button>
-                            </div>
-                            <small>
-                              Последний Sync: {formatTime(s.lastSyncAt)}
-                            </small>
-                            {s.lastResult && (
-                              <>
-                                <Stats result={s.lastResult} />
-                                {s.lastResult.warnings.map((w) => (
-                                  <small className="warning-text" key={w}>
-                                    {w}
+                            </section>
+                          ) : (
+                            <>
+                              <div className="setup-column">
+                                {s.provider.group !== "MCP" && (
+                                  <>
+                                    <h3>Подключение</h3>
+                                    <ol>
+                                      {s.provider.steps.map((step) => (
+                                        <li key={step}>{step}</li>
+                                      ))}
+                                    </ol>
+                                  </>
+                                )}
+                                <div className="doc-links">
+                                  {s.provider.registration && (
+                                    <External
+                                      href={s.provider.registration.url}
+                                    >
+                                      Аккаунт {s.provider.registration.service}
+                                    </External>
+                                  )}
+                                  {s.provider.docs.map((d) => (
+                                    <External key={d.url} href={d.url}>
+                                      {d.label}
+                                    </External>
+                                  ))}
+                                  {s.url && (
+                                    <External href={s.url}>
+                                      Открыть источник
+                                    </External>
+                                  )}
+                                </div>
+                                <p className="limitation">
+                                  <Info size={14} />
+                                  {s.provider.limitations}
+                                </p>
+                              </div>
+                              {s.provider.group !== "MCP" && (
+                                <div className="connection-column">
+                                  {s.connection.credentials.length > 0 ? (
+                                    <div className="credentials">
+                                      {s.connection.credentials.map((c) => (
+                                        <div key={c.key}>
+                                          <code>{c.key}</code>
+                                          <span
+                                            className={
+                                              c.present
+                                                ? "credential-present"
+                                                : ""
+                                            }
+                                          >
+                                            {c.present ? (
+                                              <>
+                                                <Check size={13} />
+                                                Задан
+                                              </>
+                                            ) : (
+                                              <>
+                                                <KeyRound size={13} />
+                                                Не задан
+                                              </>
+                                            )}
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <p className="muted">
+                                      API-ключ не требуется
+                                    </p>
+                                  )}
+                                  <p
+                                    className={
+                                      s.lastError ? "error-text" : "muted"
+                                    }
+                                  >
+                                    {s.connection.message}
+                                  </p>
+                                  <small>
+                                    Последний Sync: {formatTime(s.lastSyncAt)}
                                   </small>
-                                ))}
-                              </>
-                            )}
-                          </div>
+                                  {s.lastResult && (
+                                    <>
+                                      <Stats result={s.lastResult} />
+                                      {s.lastResult.warnings.map((w) => (
+                                        <small className="warning-text" key={w}>
+                                          {w}
+                                        </small>
+                                      ))}
+                                    </>
+                                  )}
+                                </div>
+                              )}
+                              {!!s.provider.mcpTools?.length && (
+                                <section className="mcp-tools-panel">
+                                  <header>
+                                    <span aria-hidden="true">
+                                      <Check size={13} />
+                                    </span>
+                                    <div>
+                                      <h3>Доступно модели через MCP</h3>
+                                      <p>
+                                        Доступен локальный MCP-сервер
+                                        {s.provider.mcpServer
+                                          ? ` ${s.provider.mcpServer}`
+                                          : ""}
+                                        . Модель может вызывать следующие
+                                        инструменты:
+                                      </p>
+                                    </div>
+                                  </header>
+                                  <div className="mcp-tools-list">
+                                    {s.provider.mcpTools.map((tool) => (
+                                      <div key={tool.name}>
+                                        <code>{tool.name}</code>
+                                        <span>{tool.description}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </section>
+                              )}
+                            </>
+                          )}
                         </div>
                       )}
                     </div>
@@ -360,16 +454,24 @@ export function Sources({
             <Empty>
               <Plug size={28} />
               <h3>Источники не найдены</h3>
-              <p>Измените поиск или добавьте источник для этой географии.</p>
+              <p>
+                {tab === "other"
+                  ? "Для этой географии нет источников в разделе «Другие»."
+                  : "Измените поиск или добавьте источник для этой географии."}
+              </p>
             </Empty>
           )}
         </>
       )}
       {tab === "discovered" && (
         <>
-          <div className="list-caption">
+          <div className="source-help candidate-help">
+            <Info size={15} />
             <span>
-              Ссылки из загруженных записей · добавляются выключенными
+              Это не события, а новые ссылки на сайты, Telegram, Instagram или
+              Facebook, найденные внутри уже загруженных карточек. LLM может
+              принять ссылку через API; новый источник создаётся выключенным и
+              не запускает обход.
             </span>
           </div>
           {discovered.length ? (
@@ -398,13 +500,6 @@ export function Sources({
                       onClick={() => onCandidate(c.id, "ignore")}
                     >
                       Скрыть
-                    </Button>
-                    <Button
-                      disabled={!!busy}
-                      primary
-                      onClick={() => onCandidate(c.id, "accept")}
-                    >
-                      <Plus size={14} />В источники
                     </Button>
                   </div>
                 </article>

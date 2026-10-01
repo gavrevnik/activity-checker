@@ -109,12 +109,13 @@ export default defineProvider(
   {
     id: "serbia-travel",
     name: "Serbia Travel",
-    group: "Местные афиши",
+    group: "API Агрегаторы",
     providerType: "Website/Aggregator",
     supportedEntityTypes: ["Event"],
     supportedScopes: ["serbia", "belgrade"],
     implemented: true,
     mode: "ingestion",
+    configFields: ["scope", "url", "keyword"],
     credentials: [],
     defaultUrl: `${origin}/en/event-calendar/`,
     description:
@@ -124,7 +125,7 @@ export default defineProvider(
     ],
     steps: [
       "Регистрация и ключ не нужны. Оставьте URL английского календаря и выберите Сербию или Белград.",
-      "Включите → «Проверить» → «Синхронизировать». Для поиска по названию задайте ключевое слово.",
+      "Единая кнопка блока API Агрегаторы запускает источник. Для поиска по названию задайте ключевое слово.",
     ],
     limitations:
       "Публичный интерфейс календаря, до 30 страниц. Даты без времени; цены и полные описания не загружаются. Для Белграда дополнительно проверяется город карточки. При изменении сайта адаптер может потребовать обновления.",

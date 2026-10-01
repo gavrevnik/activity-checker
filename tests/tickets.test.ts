@@ -140,7 +140,7 @@ describe("Tickets.rs public website adapter", () => {
       parseTicketsEvent(event(1, { ImgSrc: "javascript:alert(1)" }), town, ctx),
     ).toThrow();
   });
-  it("handles Serbian hour notation and keeps separate performances distinct", () => {
+  it("handles Serbian hour notation and collapses otherwise identical performances", () => {
     const records = ["12h", "17h", "20.00", "10:00-15:00"].map((time, i) => {
       const raw = parseTicketsEvent(
         event(i + 1, { DateTime: `nedelja 25.septembar ${time}` }),
@@ -155,8 +155,90 @@ describe("Tickets.rs public website adapter", () => {
       "2026-09-25T18:00:00.000Z",
       "2026-09-25T08:00:00.000Z",
     ]);
-    expect(store.ingest(ctx.source, records).created).toBe(4);
+    const first = store.ingest(ctx.source, records);
+    expect(first.created).toBe(1);
+    expect(first.duplicates).toBe(3);
+    expect(store.entities({ includeFiltered: true })[0].startAt).toBe(
+      "2026-09-25T08:00:00.000Z",
+    );
     expect(store.ingest(ctx.source, records).duplicates).toBe(4);
+  });
+  it("collapses identical dated performances and keeps the nearest date and time", () => {
+    const records = [
+      event(101, {
+        DateTime: "3. oktobar 2026 17:00",
+        StartDate: "2026-10-03",
+        EndDate: "2026-10-03",
+      }),
+      event(102, {
+        DateTime: "2. oktobar 2026 17:00",
+        StartDate: "2026-10-02",
+        EndDate: "2026-10-02",
+      }),
+      event(103, {
+        DateTime: "2. oktobar 2026 12:00",
+        StartDate: "2026-10-02",
+        EndDate: "2026-10-02",
+      }),
+    ].map((value) => {
+      const raw = parseTicketsEvent(value, town, ctx)!;
+      return { raw, entity: tickets.normalize(raw, ctx)! };
+    });
+
+    const first = store.ingest(ctx.source, records);
+
+    expect(first).toMatchObject({ fetched: 3, created: 1, duplicates: 2 });
+    expect(first.warnings[0]).toContain("оставлена ближайшая дата/время");
+    expect(store.entities()).toHaveLength(1);
+    expect(store.entities()[0].startAt).toBe("2026-10-02T10:00:00.000Z");
+    expect(store.entity(store.entities()[0].id).provenance).toHaveLength(1);
+
+    const nextRaw = parseTicketsEvent(
+      event(104, {
+        DateTime: "9. oktobar 2026 12:00",
+        StartDate: "2026-10-09",
+        EndDate: "2026-10-09",
+      }),
+      town,
+      ctx,
+    )!;
+    expect(
+      store.ingest(ctx.source, [
+        { raw: nextRaw, entity: tickets.normalize(nextRaw, ctx)! },
+      ]).updated,
+    ).toBe(1);
+    expect(store.entities()).toHaveLength(1);
+    expect(store.entities()[0].startAt).toBe("2026-10-09T10:00:00.000Z");
+  });
+  it("aggressively collapses same-day Tickets.rs cards and keeps the earliest", () => {
+    const records = [
+      event(201, {
+        DateTime: "2. oktobar 2026 12:00",
+        StartDate: "2026-10-02",
+        EndDate: "2026-10-02",
+      }),
+      event(202, {
+        DateTime: "2. oktobar 2026 17:00",
+        StartDate: "2026-10-02",
+        EndDate: "2026-10-02",
+        Venue: "Other club",
+      }),
+    ].map((value) => {
+      const raw = parseTicketsEvent(value, town, ctx)!;
+      return { raw, entity: tickets.normalize(raw, ctx)! };
+    });
+
+    expect(store.ingest(ctx.source, records)).toMatchObject({
+      fetched: 2,
+      created: 1,
+      updated: 0,
+      duplicates: 1,
+    });
+    expect(store.entities()).toHaveLength(1);
+    expect(store.entities()[0]).toMatchObject({
+      startAt: "2026-10-02T10:00:00.000Z",
+      venue: "Club",
+    });
   });
   it("paginates the city and Zemun, deduplicates overlaps and sends keyword and current day", async () => {
     mockAPI({ 8918: [[event(1)], [event(2)]], 164: [[event(2)]] });

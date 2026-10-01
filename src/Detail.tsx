@@ -93,7 +93,9 @@ export function Detail({
             </span>
             <div>
               <div className="detail-kicker">
-                {typeLabels[entity.type]}
+                {entity.type === "Place" && entity.tags.includes("restaurant")
+                  ? "Ресторан"
+                  : typeLabels[entity.type]}
                 {entity.demo && <span className="badge demo">Демо</span>}
                 {entity.archived && <span className="badge">Архив</span>}
               </div>
@@ -192,6 +194,35 @@ export function Detail({
                 <span>{entity.openingHours}</span>
               </div>
             )}
+            {entity.type === "Place" && entity.cuisine && (
+              <div>
+                <span className="fact-label">Кухня</span>
+                <span>{entity.cuisine}</span>
+              </div>
+            )}
+            {entity.type === "Place" &&
+              (entity.googleRating !== null ||
+                entity.googleReviewCount !== null) && (
+                <div>
+                  <span className="fact-label">Google</span>
+                  <span>
+                    {entity.googleRating !== null
+                      ? `${entity.googleRating}/5`
+                      : "Рейтинг не указан"}
+                    {entity.googleReviewCount !== null
+                      ? ` · ${entity.googleReviewCount.toLocaleString("ru-RU")} отзывов`
+                      : ""}
+                    {entity.googleRatingCheckedAt && (
+                      <small>
+                        Проверено LLM:{" "}
+                        {new Date(
+                          entity.googleRatingCheckedAt,
+                        ).toLocaleDateString("ru-RU")}
+                      </small>
+                    )}
+                  </span>
+                </div>
+              )}
             {entity.languages.length > 0 && (
               <div>
                 <span className="fact-label">Языки</span>
@@ -228,6 +259,11 @@ export function Detail({
                 href={`https://www.openstreetmap.org/?mlat=${entity.latitude}&mlon=${entity.longitude}#map=17/${entity.latitude}/${entity.longitude}`}
               >
                 На карте
+              </External>
+            )}
+            {entity.googleRatingSource.startsWith("http") && (
+              <External href={entity.googleRatingSource}>
+                Источник рейтинга
               </External>
             )}
           </div>

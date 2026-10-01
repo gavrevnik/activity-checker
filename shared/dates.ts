@@ -20,6 +20,32 @@ export function displayDate(
     ...options,
   }).format(new Date(value.length === 10 ? value + "T12:00:00Z" : value));
 }
+
+export function eventDateLabel(value: string, timeZone = zone) {
+  if (!value) return "";
+  const dateOnly = value.length === 10;
+  const date = new Date(dateOnly ? value + "T12:00:00Z" : value);
+  if (Number.isNaN(date.valueOf())) return "";
+  const day = dateOnly ? value : localDay(date, timeZone);
+  const rawWeekday = new Intl.DateTimeFormat("ru-RU", {
+    timeZone: dateOnly ? "UTC" : timeZone,
+    weekday: "short",
+  })
+    .format(date)
+    .replace(/\.$/, "");
+  const weekday =
+    rawWeekday.charAt(0).toLocaleUpperCase("ru-RU") + rawWeekday.slice(1);
+  const time = dateOnly
+    ? ""
+    : new Intl.DateTimeFormat("en-GB", {
+        timeZone,
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
+      }).format(date);
+  return [day, weekday, time].filter(Boolean).join(" · ");
+}
+
 export function inPeriod(
   start: string,
   period: string,
@@ -38,10 +64,41 @@ export function inPeriod(
   };
   if (period === "today") return day === today;
   if (period === "week") return day >= today && day <= add(6 - weekday);
+  if (period === "two-weeks") return day >= today && day <= add(13 - weekday);
   if (period === "weekend")
     return day >= add(5 - weekday) && day <= add(6 - weekday);
   if (period === "custom") return (!from || day >= from) && (!to || day <= to);
   return true;
+}
+
+export function inDateRange(
+  startAt: string,
+  endAt = "",
+  from = "",
+  to = "",
+  timeZone = zone,
+) {
+  if (!startAt) return false;
+  const day = (value: string) =>
+    value.length === 10 ? value : localDay(value, timeZone);
+  const start = day(startAt);
+  const end = endAt ? day(endAt) : start;
+  return (!from || end >= from) && (!to || start <= to);
+}
+
+export function isPastEvent(
+  startAt: string,
+  endAt = "",
+  today = localDay(),
+  timeZone = zone,
+) {
+  const lastKnownDate = endAt || startAt;
+  if (!lastKnownDate) return false;
+  const day =
+    lastKnownDate.length === 10
+      ? lastKnownDate
+      : localDay(lastKnownDate, timeZone);
+  return day < today;
 }
 
 export function localDateTime(value: string, timeZone = zone): string {
@@ -61,6 +118,18 @@ export function localDateTime(value: string, timeZone = zone): string {
   );
   return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
 }
+
+export function startsAtOrAfterHour(
+  startAt: string,
+  hour = "",
+  timeZone = zone,
+) {
+  if (!hour) return true;
+  if (!startAt || startAt.length === 10) return false;
+  const localHour = Number(localDateTime(startAt, timeZone).slice(11, 13));
+  return localHour >= Number(hour);
+}
+
 export function fromLocalDateTime(
   day: string,
   time: string,

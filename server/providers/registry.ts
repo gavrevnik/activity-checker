@@ -8,6 +8,11 @@ import afisha from "./websites/afisha.js";
 import bilet from "./websites/bilet.js";
 import tickets from "./websites/tickets.js";
 import serbiaTravel from "./websites/serbia-travel.js";
+import allEvents from "./websites/allevents.js";
+import { apifyProviders } from "./apify/providers.js";
+import { telegram } from "./telegram/provider.js";
+import { foursquare } from "./foursquare/provider.js";
+import { googlePlacesApi } from "./google-places/provider.js";
 import type { ActivityProvider } from "./types.js";
 export const providers: ActivityProvider[] = [
   overpass,
@@ -19,6 +24,11 @@ export const providers: ActivityProvider[] = [
   bilet,
   tickets,
   serbiaTravel,
+  allEvents,
+  telegram,
+  foursquare,
+  googlePlacesApi,
+  ...apifyProviders,
   ...catalog,
 ];
 export function getProvider(id: string) {
@@ -27,6 +37,13 @@ export function getProvider(id: string) {
   return p;
 }
 export function providerInfo(p: ActivityProvider) {
-  const { sync, normalize, testConnection, connectionStatus, ...info } = p;
+  const {
+    sync,
+    normalize,
+    testConnection,
+    connectionStatus,
+    planSync,
+    ...info
+  } = p;
   return info;
 }

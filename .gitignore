@@ -2,7 +2,13 @@ node_modules/
 dist/
 .env.local
 .env
+/tmp.py
+.venv-telegram/
+*.session
+*.session-journal
 *.sqlite*
 .runtime/
 .DS_Store
 coverage/
+# Локальные результаты discovery; запросы и тарифные настройки остаются в Git.
+data/*discovery*20??-??-??.json

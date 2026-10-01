@@ -14,10 +14,22 @@
     "test": "vitest run",
     "db:migrate": "node --import tsx scripts/migrate.ts",
     "format": "prettier --write src server shared tests scripts docs examples *.json *.ts *.md",
-    "test:http": "node --import tsx scripts/check-http.ts"
+    "test:http": "node --import tsx scripts/check-http.ts",
+    "apify:tool": "node --import tsx scripts/apify-tool.ts",
+    "apify:mcp": "node --import tsx scripts/apify-mcp.ts",
+    "apify:import": "node --import tsx scripts/apify-import.ts",
+    "telegram:setup": "uv venv .venv-telegram --python 3.12 && uv pip install --python .venv-telegram/bin/python -r requirements-telegram.txt",
+    "telegram:auth": "node --import tsx scripts/telegram-tool.ts --authorize",
+    "telegram:tool": "node --import tsx scripts/telegram-tool.ts",
+    "telegram:mcp": "node --import tsx scripts/telegram-mcp.ts",
+    "telegram:research": "node --import tsx scripts/telegram-research.ts",
+    "foursquare:mcp": "node --import tsx scripts/foursquare-mcp.ts",
+    "google-places:mcp": "node --import tsx scripts/google-places-mcp.ts",
+    "restaurants:import": "node --import tsx scripts/import-legacy-restaurants.ts"
   },
   "dependencies": {
     "@fontsource-variable/golos-text": "^5.3.0",
+    "@modelcontextprotocol/sdk": "^1.31.0",
     "cheerio": "^1.1.2",
     "dotenv": "^16.6.1",
     "express": "^5.1.0",

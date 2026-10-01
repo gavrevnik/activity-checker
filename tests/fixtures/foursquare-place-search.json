@@ -1,0 +1,29 @@
+{
+  "results": [
+    {
+      "fsq_place_id": "fsq-test-squash-1",
+      "name": "Belgrade Squash Club",
+      "latitude": 44.8123,
+      "longitude": 20.4612,
+      "categories": [
+        {
+          "fsq_category_id": "18021",
+          "name": "Sports and Recreation"
+        }
+      ],
+      "location": {
+        "address": "Test 12",
+        "formatted_address": "Test 12, Belgrade",
+        "locality": "Belgrade",
+        "country": "RS"
+      },
+      "tel": "+38111123456",
+      "website": "https://squash.example/",
+      "rating": 8.7,
+      "price": 2,
+      "hours": {
+        "display": ["Mon–Fri 08:00–22:00", "Sat–Sun 09:00–20:00"]
+      }
+    }
+  ]
+}

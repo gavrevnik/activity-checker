@@ -1,0 +1,25 @@
+{
+  "updatedAt": "2026-10-01",
+  "apify": {
+    "instagram": {
+      "unit": "result",
+      "pricePerResultUsd": 0.0027
+    },
+    "facebookEvents": {
+      "unit": "event",
+      "pricePerResultUsd": 0.013
+    },
+    "googleMaps": {
+      "unit": "place",
+      "pricePerResultUsd": 0.004
+    }
+  },
+  "foursquare": {
+    "period": "calendar-month",
+    "freeRequests": 500,
+    "localHardLimit": 500,
+    "priceAfterFreeUsdPerThousand": 15,
+    "apiVersion": "2025-06-17",
+    "source": "https://docs.foursquare.com/developer/reference/upcoming-changes"
+  }
+}

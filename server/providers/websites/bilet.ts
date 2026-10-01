@@ -116,19 +116,20 @@ export default defineProvider(
   {
     id: "bilet",
     name: "Bilet.rs",
-    group: "Местные афиши",
+    group: "API Агрегаторы",
     providerType: "Website/Aggregator",
     supportedEntityTypes: ["Event"],
     supportedScopes: ["belgrade", "serbia"],
     implemented: true,
     mode: "ingestion",
+    configFields: ["scope", "url", "keyword"],
     defaultUrl: `${origin}/events/`,
     credentials: [],
     description: "Билетная афиша с фильтром города и обходом страниц.",
     docs: [{ label: "Афиша Bilet.rs", url: `${origin}/events/` }],
     steps: [
       "Ключ и регистрация не нужны. Укажите https://bilet.rs/events/ и выберите географию.",
-      "Включите источник → «Проверить» → «Синхронизировать». Поиск по названию задаётся ключевым словом.",
+      "Единая кнопка блока API Агрегаторы запускает источник. Поиск по названию задаётся ключевым словом.",
     ],
     limitations:
       "До 30 страниц за запуск. Для Белграда используется поиск Beograd в локациях сайта: площадки без этого указания могут не попасть в выборку. Город из текста площадки имеет приоритет. Для всей Сербии неизвестный город остаётся пустым. Цены и полные описания список не отдаёт.",

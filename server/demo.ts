@@ -52,16 +52,6 @@ export function seedDemo(store: Store) {
           demo: true,
           externalId: "demo-walks",
         },
-        {
-          type: "Organizer",
-          title: "Независимая мастерская",
-          description:
-            "Пример организатора лекций, мастер-классов и небольших выставок.",
-          category: "Искусство",
-          tags: ["workshops"],
-          demo: true,
-          externalId: "demo-studio",
-        },
       ];
       store.ingest(
         store.source("source-manual"),

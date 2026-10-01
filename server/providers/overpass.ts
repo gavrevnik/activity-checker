@@ -107,12 +107,14 @@ export const overpass = defineProvider(
   {
     id: "overpass",
     name: "OpenStreetMap",
-    group: "Места",
+    group: "Другое",
     providerType: "Open data",
     supportedEntityTypes: ["Place"],
     supportedScopes: ["*"],
     implemented: true,
     mode: "ingestion",
+    configFields: ["scope"],
+    otherSource: true,
     description: "Музеи, скалодромы, кино, спорт и другие постоянные места.",
     credentials: [],
     docs: [
@@ -123,8 +125,8 @@ export const overpass = defineProvider(
       { label: "Проверить запрос", url: "https://overpass-turbo.eu/" },
     ],
     steps: [
-      "Ключ и аккаунт не нужны. Включите источник и нажмите «Проверить».",
-      "Нажмите «Синхронизировать»: загрузятся места выбранной географии.",
+      "Ключ и аккаунт не нужны.",
+      "Нажмите значок синхронизации в строке: загрузятся места выбранной географии.",
       "При временной ошибке основного сервера используется один резервный. Свой endpoint можно задать в OVERPASS_URL в .env.local.",
     ],
     limitations:

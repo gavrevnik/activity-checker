@@ -3,15 +3,12 @@ import { parse } from "dotenv";
 const keys = [
   "TELEGRAM_API_ID",
   "TELEGRAM_API_HASH",
-  "TGSTAT_TOKEN",
+  "TELEGRAM_PYTHON",
+  "TELEGRAM_SESSION_PATH",
   "APIFY_TOKEN",
-  "SCRAPECREATORS_API_KEY",
   "TICKETMASTER_API_KEY",
-  "MEETUP_ACCESS_TOKEN",
-  "EVENTBRITE_TOKEN",
-  "PREDICTHQ_TOKEN",
-  "GOOGLE_PLACES_API_KEY",
   "FOURSQUARE_API_KEY",
+  "GOOGLE_PLACES_API_KEY",
   "OVERPASS_URL",
 ];
 export function readSecrets(): Record<string, string | undefined> {

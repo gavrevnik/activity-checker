@@ -1,9 +1,31 @@
 import { it, expect } from "vitest";
 import {
+  eventDateLabel,
   fromLocalDateTime,
+  inDateRange,
+  inPeriod,
+  isPastEvent,
   localDateTime,
   parseCalendarInput,
+  startsAtOrAfterHour,
 } from "../shared/dates";
+
+it("formats an event date with its local weekday and known time", () => {
+  expect(eventDateLabel("2026-05-12T08:00:00Z", "Europe/Belgrade")).toBe(
+    "2026-05-12 · Вт · 10:00",
+  );
+  expect(eventDateLabel("2026-05-10", "Europe/Belgrade")).toBe(
+    "2026-05-10 · Вс",
+  );
+  expect(eventDateLabel("")).toBe("");
+});
+
+it("includes the rest of this week and all of next week", () => {
+  expect(inPeriod("2026-10-01", "two-weeks", "", "", "2026-10-01")).toBe(true);
+  expect(inPeriod("2026-10-11", "two-weeks", "", "", "2026-10-01")).toBe(true);
+  expect(inPeriod("2026-10-12", "two-weeks", "", "", "2026-10-01")).toBe(false);
+});
+
 it("converts summer and winter Belgrade wall times", () => {
   expect(fromLocalDateTime("2026-10-02", "20:00")).toBe(
     "2026-10-02T18:00:00.000Z",
@@ -12,6 +34,43 @@ it("converts summer and winter Belgrade wall times", () => {
     "2026-12-02T19:00:00.000Z",
   );
   expect(localDateTime("2026-10-02T18:00:00Z")).toBe("2026-10-02T20:00");
+});
+
+it("treats an event as past only after its last known local date", () => {
+  expect(isPastEvent("2026-09-30", "", "2026-10-01")).toBe(true);
+  expect(isPastEvent("2026-09-30", "2026-10-02", "2026-10-01")).toBe(false);
+  expect(
+    isPastEvent("2026-09-30T23:30:00Z", "", "2026-10-01", "Europe/Belgrade"),
+  ).toBe(false);
+  expect(isPastEvent("", "", "2026-10-01")).toBe(false);
+});
+
+it("filters event intervals by an inclusive date range", () => {
+  expect(inDateRange("2026-10-03", "", "2026-10-01", "2026-10-03")).toBe(true);
+  expect(
+    inDateRange("2026-09-29", "2026-10-02", "2026-10-01", "2026-10-05"),
+  ).toBe(true);
+  expect(inDateRange("2026-10-06", "", "2026-10-01", "2026-10-05")).toBe(false);
+  expect(
+    inDateRange(
+      "2026-09-30T23:30:00Z",
+      "",
+      "2026-10-01",
+      "2026-10-01",
+      "Europe/Belgrade",
+    ),
+  ).toBe(true);
+  expect(inDateRange("", "", "2026-10-01", "2026-10-05")).toBe(false);
+});
+it("filters events by their local start hour", () => {
+  expect(
+    startsAtOrAfterHour("2026-10-02T13:00:00Z", "15", "Europe/Belgrade"),
+  ).toBe(true);
+  expect(
+    startsAtOrAfterHour("2026-10-02T12:59:00Z", "15", "Europe/Belgrade"),
+  ).toBe(false);
+  expect(startsAtOrAfterHour("2026-10-02", "15")).toBe(false);
+  expect(startsAtOrAfterHour("2026-10-02", "")).toBe(true);
 });
 it("keeps unknown times empty and rejects DST gaps", () => {
   expect(fromLocalDateTime("2026-10-02", "")).toBe("2026-10-02");

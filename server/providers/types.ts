@@ -4,7 +4,10 @@ import type {
   ProviderInfo,
   Scope,
   Source,
+  SyncOptions,
+  SyncPlan,
 } from "../../shared/model.js";
+import type { Store } from "../store.js";
 export interface RawItem {
   externalId: string;
   url: string;
@@ -16,6 +19,7 @@ export interface ProviderContext {
   source: Source;
   scope: Scope;
   secrets: Record<string, string | undefined>;
+  store?: Store;
 }
 export interface FetchResult {
   items: RawItem[];
@@ -24,7 +28,8 @@ export interface FetchResult {
 export interface ActivityProvider extends ProviderInfo {
   connectionStatus(ctx: ProviderContext): Connection;
   testConnection(ctx: ProviderContext): Promise<string>;
-  sync(ctx: ProviderContext): Promise<FetchResult>;
+  planSync?(ctx: ProviderContext, options: SyncOptions): Promise<SyncPlan>;
+  sync(ctx: ProviderContext, options?: SyncOptions): Promise<FetchResult>;
   normalize(item: RawItem, ctx: ProviderContext): EntityInput | null;
 }
 export const statusFor = (
@@ -45,8 +50,6 @@ export const statusFor = (
       status: "setup_required",
       message: "Провайдер не поддерживает выбранную географию",
     };
-  if (!ctx.source.enabled)
-    return { ...base, status: "disabled", message: "Источник выключен" };
   if (!info.implemented)
     return {
       ...base,
@@ -83,7 +86,7 @@ export const statusFor = (
       ctx.source.lastError ||
       (ctx.source.status === "connected"
         ? "Подключение проверено"
-        : "Готов к проверке"),
+        : "Готов к синхронизации"),
     canSync: true,
     canTest: true,
   };
@@ -93,7 +96,8 @@ export function defineProvider(
   implementation: Pick<
     ActivityProvider,
     "sync" | "normalize" | "testConnection"
-  >,
+  > &
+    Partial<Pick<ActivityProvider, "planSync">>,
 ): ActivityProvider {
   return {
     ...info,

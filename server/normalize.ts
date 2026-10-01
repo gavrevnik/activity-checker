@@ -56,6 +56,28 @@ export function normalize(value: unknown): NormalizedEntity {
     languages: [...new Set(e.languages.map((l) => l.toLowerCase()))],
   };
 }
+const ticketsSeriesIgnoredFields = new Set([
+  "startAt",
+  "endAt",
+  "url",
+  "externalId",
+  "knownIds",
+  "aiScore",
+  "aiDecision",
+  "aiReason",
+  "aiTags",
+  "aiProcessedAt",
+]);
+export function ticketsSeriesKey(entity: NormalizedEntity) {
+  if (entity.type !== "Event" || !entity.startAt) return "";
+  return digest(
+    Object.fromEntries(
+      Object.entries(entity).filter(
+        ([field]) => !ticketsSeriesIgnoredFields.has(field),
+      ),
+    ),
+  );
+}
 export function identityKeys(e: NormalizedEntity): string[] {
   const prefix = [e.demo ? "demo" : "real", e.type, e.country].join(":") + ":";
   const keys: string[] = [];
@@ -68,10 +90,15 @@ export function identityKeys(e: NormalizedEntity): string[] {
     (e.type !== "Place" || specific)
   )
     keys.push(`url:${url}${e.type === "Event" ? ":" + e.startAt : ""}`);
-  if (e.type === "Event" && e.startAt && e.venue)
-    keys.push(
-      `event:${nameKey(e.title)}:${e.startAt}:${nameKey(e.venue)}:${nameKey(e.city)}`,
-    );
+  if (e.type === "Event" && e.startAt) {
+    // Exact title + instant + city is stable across feeds even when one feed
+    // omits the venue. The venue-specific key remains useful when present.
+    keys.push(`event:${nameKey(e.title)}:${e.startAt}:${nameKey(e.city)}`);
+    if (e.venue)
+      keys.push(
+        `event-venue:${nameKey(e.title)}:${e.startAt}:${nameKey(e.venue)}:${nameKey(e.city)}`,
+      );
+  }
   if (e.type === "Place") {
     if (e.address)
       keys.push(
@@ -82,10 +109,7 @@ export function identityKeys(e: NormalizedEntity): string[] {
         `geo:${nameKey(e.title)}:${e.latitude.toFixed(4)},${e.longitude.toFixed(4)}`,
       );
   }
-  if (
-    (e.type === "Community" || e.type === "Organizer") &&
-    (e.url || e.website)
-  )
+  if (e.type === "Community" && (e.url || e.website))
     keys.push(`social:${nameKey(e.title)}:${canonicalUrl(e.url || e.website)}`);
   return [...new Set(keys)].map((k) => prefix + k);
 }

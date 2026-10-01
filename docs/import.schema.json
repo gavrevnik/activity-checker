@@ -16,7 +16,7 @@
         "properties": {
           "type": {
             "type": "string",
-            "enum": ["Event", "Place", "Community", "Organizer"]
+            "enum": ["Event", "Place", "Community"]
           },
           "title": {
             "type": "string",
@@ -47,6 +47,11 @@
             "default": "",
             "type": "string",
             "maxLength": 20000
+          },
+          "cuisine": {
+            "default": "",
+            "type": "string",
+            "maxLength": 300
           },
           "tags": {
             "default": [],
@@ -174,6 +179,72 @@
             "default": "",
             "type": "string",
             "maxLength": 20000
+          },
+          "googleRating": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 5
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "googleReviewCount": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "googleRatingSource": {
+            "default": "",
+            "type": "string",
+            "maxLength": 20000
+          },
+          "googleRatingCheckedAt": {
+            "default": null,
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": ""
+                  },
+                  {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "memberCount": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "externalId": {
             "type": "string",

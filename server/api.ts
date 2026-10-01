@@ -1,6 +1,12 @@
 import express from "express";
 import { z, ZodError } from "zod";
-import { entitySchema, importSchema, sourceSchema } from "../shared/model.js";
+import {
+  entitySchema,
+  filteringRulesSchema,
+  importSchema,
+  sourceSchema,
+  userProfileSchema,
+} from "../shared/model.js";
 import type { Store } from "./store.js";
 import { SyncService } from "./sync.js";
 import { providers, providerInfo } from "./providers/registry.js";
@@ -11,19 +17,26 @@ export function createApi(store: Store, port: number) {
   const sync = new SyncService(store);
   app.disable("x-powered-by");
   app.use((req, res, next) => {
-    const allowed = [`127.0.0.1:${port}`, `localhost:${port}`];
-    if (!allowed.includes(req.headers.host || ""))
+    const allowedHosts = [
+      `127.0.0.1:${port}`,
+      `localhost:${port}`,
+      "activity-checker.localhost",
+    ];
+    const allowedOrigins = [
+      `http://127.0.0.1:${port}`,
+      `http://localhost:${port}`,
+      "http://activity-checker.localhost",
+    ];
+    if (!allowedHosts.includes(req.headers.host || ""))
       return res.status(403).json({ error: "Недопустимый Host" });
+    const safeMethod = ["GET", "HEAD", "OPTIONS"].includes(req.method);
     if (
-      (req.headers.origin &&
-        !allowed.map((h) => "http://" + h).includes(req.headers.origin)) ||
-      req.headers["sec-fetch-site"] === "cross-site"
+      !safeMethod &&
+      ((req.headers.origin && !allowedOrigins.includes(req.headers.origin)) ||
+        req.headers["sec-fetch-site"] === "cross-site")
     )
       return res.status(403).json({ error: "Запрос с другого сайта отклонён" });
-    if (
-      !["GET", "HEAD", "OPTIONS"].includes(req.method) &&
-      !req.is("application/json")
-    )
+    if (!safeMethod && !req.is("application/json"))
       return res
         .status(415)
         .json({ error: "Ожидается Content-Type: application/json" });
@@ -44,6 +57,8 @@ export function createApi(store: Store, port: number) {
       candidates: store.candidates(),
       entities: store.entities(),
       runs: sync.runs(),
+      profile: store.profile(),
+      filterRules: store.filterRulesView(),
     }),
   );
   app.get("/api/health", (_req, res) =>
@@ -51,6 +66,26 @@ export function createApi(store: Store, port: number) {
   );
   app.get("/api/entities/:id", (req, res) =>
     res.json(store.entity(req.params.id)),
+  );
+  app.post("/api/entities/archive-past", (req, res) =>
+    res.json(
+      store.archivePastEvents(
+        z
+          .object({ scopeId: z.string().min(1) })
+          .strict()
+          .parse(req.body).scopeId,
+      ),
+    ),
+  );
+  app.get("/api/profile", (_req, res) => res.json(store.profile()));
+  app.put("/api/profile", (req, res) =>
+    res.json(store.saveProfile(userProfileSchema.parse(req.body))),
+  );
+  app.get("/api/filter-rules", (_req, res) =>
+    res.json(store.filterRulesView()),
+  );
+  app.put("/api/filter-rules", (req, res) =>
+    res.json(store.saveFilterRules(filteringRulesSchema.parse(req.body))),
   );
   app.post("/api/entities", (req, res) => {
     const entity = entitySchema.parse(req.body);
@@ -120,8 +155,11 @@ export function createApi(store: Store, port: number) {
   app.post("/api/sources/:id/test", async (req, res) =>
     res.json(await sync.run(req.params.id, true)),
   );
+  app.post("/api/sources/:id/sync-plan", async (req, res) =>
+    res.json(await sync.plan(req.params.id, req.body)),
+  );
   app.post("/api/sources/:id/sync", async (req, res) =>
-    res.json(await sync.run(req.params.id)),
+    res.json(await sync.run(req.params.id, false, req.body)),
   );
   app.post("/api/sync", async (req, res) =>
     res.json(

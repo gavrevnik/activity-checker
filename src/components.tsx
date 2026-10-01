@@ -6,14 +6,12 @@ import {
   CalendarDays,
   MapPin,
   Users,
-  Building2,
 } from "lucide-react";
 import type { EntityType, SyncResult } from "../shared/model";
 export const icons = {
   Event: CalendarDays,
   Place: MapPin,
   Community: Users,
-  Organizer: Building2,
 };
 export function TypeIcon({
   type,
@@ -150,6 +148,9 @@ export function Stats({ result }: { result: SyncResult }) {
       </span>
       <span>
         Повторных <b>{result.duplicates}</b>
+      </span>
+      <span>
+        Отфильтровано <b>{result.filtered}</b>
       </span>
       <span className={result.errors ? "error-text" : ""}>
         Ошибок <b>{result.errors}</b>

@@ -2,7 +2,14 @@ import type { Store } from "./store.js";
 import { randomUUID } from "node:crypto";
 import { getProvider, providerInfo } from "./providers/registry.js";
 import { readSecrets, safeError } from "./secrets.js";
-import type { SourceView, SyncResult, SyncRun } from "../shared/model.js";
+import { googlePlacesQuotaStatus } from "./providers/google-places/quota.js";
+import {
+  syncOptionsSchema,
+  type SourceView,
+  type SyncPlan,
+  type SyncResult,
+  type SyncRun,
+} from "../shared/model.js";
 export class SyncService {
   private busy = false;
   constructor(private store: Store) {}
@@ -13,23 +20,55 @@ export class SyncService {
         source,
         scope: this.store.scope(source.scopeId),
         secrets: readSecrets(),
+        store: this.store,
       };
       const count = this.store.db
         .prepare(
           "SELECT COUNT(DISTINCT l.entityId) AS count FROM entity_source_links l JOIN source_items i ON i.id=l.sourceItemId WHERE i.sourceId=?",
         )
         .get(source.id) as { count: number };
+      const googlePlacesQuota =
+        source.providerId === "google-places-api"
+          ? googlePlacesQuotaStatus(this.store)
+          : null;
+      const proQuota = googlePlacesQuota?.bySku.pro;
+      const enterpriseQuota = googlePlacesQuota?.bySku.enterprise;
       return {
         ...source,
         provider: providerInfo(provider),
         connection: provider.connectionStatus(ctx),
         itemCount: count.count,
+        ...(googlePlacesQuota && proQuota && proQuota.limit !== null
+          ? {
+              quotaUsage: {
+                sku: "pro" as const,
+                used: proQuota.used,
+                limit: proQuota.limit,
+                remaining: proQuota.remaining ?? 0,
+                billingMonth: googlePlacesQuota.billingMonth,
+              },
+            }
+          : {}),
+        ...(googlePlacesQuota &&
+        enterpriseQuota &&
+        enterpriseQuota.limit !== null
+          ? {
+              enterpriseQuotaUsage: {
+                sku: "enterprise" as const,
+                used: enterpriseQuota.used,
+                limit: enterpriseQuota.limit,
+                remaining: enterpriseQuota.remaining ?? 0,
+                billingMonth: googlePlacesQuota.billingMonth,
+              },
+            }
+          : {}),
       };
     });
   }
   async run(
     id: string,
     test = false,
+    input: unknown = {},
   ): Promise<SyncResult | { message: string }> {
     if (this.busy)
       throw new Error("Другая проверка или синхронизация ещё выполняется.");
@@ -39,9 +78,15 @@ export class SyncService {
       source,
       scope: this.store.scope(source.scopeId),
       secrets: readSecrets(),
+      store: this.store,
     };
     const state = provider.connectionStatus(ctx);
     if (test ? !state.canTest : !state.canSync) throw new Error(state.message);
+    const options = syncOptionsSchema.parse(input);
+    if (!test && provider.requiresSyncConfirmation && !options.confirmed)
+      throw new Error(
+        "Синхронизацию нужно подтвердить после просмотра параметров и оценки запросов.",
+      );
     const last = this.store.db
       .prepare(
         "SELECT MAX(lastAttemptAt) AS stamp FROM sources WHERE providerId=?",
@@ -84,7 +129,7 @@ export class SyncService {
           .run(new Date().toISOString(), id);
         return { message };
       }
-      const fetched = await provider.sync(ctx);
+      const fetched = await provider.sync(ctx, options);
       const warnings = [...(fetched.warnings || [])];
       const records = [];
       let errors = 0;
@@ -102,7 +147,10 @@ export class SyncService {
       const result = this.store.ingest(source, records);
       result.fetched = fetched.items.length;
       result.errors = errors;
-      result.warnings = [...new Set(warnings)].slice(0, 30);
+      result.warnings = [...new Set([...result.warnings, ...warnings])].slice(
+        0,
+        30,
+      );
       result.runId = runId;
       const finishedAt = new Date().toISOString();
       this.store.db
@@ -118,7 +166,7 @@ export class SyncService {
         );
       this.store.db
         .prepare(
-          "UPDATE sync_runs SET status=?,finishedAt=?,fetched=?,created=?,updated=?,duplicates=?,errors=?,warnings=? WHERE id=?",
+          "UPDATE sync_runs SET status=?,finishedAt=?,fetched=?,created=?,updated=?,duplicates=?,filtered=?,errors=?,warnings=? WHERE id=?",
         )
         .run(
           errors ? "partial" : "success",
@@ -127,6 +175,7 @@ export class SyncService {
           result.created,
           result.updated,
           result.duplicates,
+          result.filtered,
           result.errors,
           JSON.stringify(result.warnings),
           runId,
@@ -148,12 +197,59 @@ export class SyncService {
       this.busy = false;
     }
   }
+  async plan(id: string, input: unknown = {}): Promise<SyncPlan> {
+    const source = this.store.source(id),
+      provider = getProvider(source.providerId),
+      ctx = {
+        source,
+        scope: this.store.scope(source.scopeId),
+        secrets: readSecrets(),
+        store: this.store,
+      },
+      options = syncOptionsSchema.parse(input);
+    const state = provider.connectionStatus(ctx);
+    if (!state.canSync) throw new Error(state.message);
+    if (!provider.planSync)
+      return {
+        sourceId: source.id,
+        providerId: provider.id,
+        title: `Синхронизация · ${source.name}`,
+        summary: "Будет выполнен один ручной запрос к источнику.",
+        requiresConfirmation: false,
+        expectedRequests: 1,
+        minimumRequests: 1,
+        maximumRequests: 1,
+        parameters: [],
+        warnings: [],
+      };
+    let plan: SyncPlan;
+    try {
+      plan = await provider.planSync(ctx, options);
+    } catch (caught) {
+      const error = safeError(caught);
+      this.store.db
+        .prepare("UPDATE sources SET status='error',lastError=? WHERE id=?")
+        .run(error, id);
+      throw new Error(error);
+    }
+    if (provider.id === "allevents") {
+      const known = this.store.estimateAllEvents(
+        source.id,
+        plan.startDate || "",
+        plan.endDate || "",
+        plan.categories || ["all"],
+      );
+      plan.knownItems = known;
+    }
+    return plan;
+  }
   async all(scopeId: string) {
     const scope = this.store.scope(scopeId);
     const eligible = this.views().filter(
       (s) =>
         s.connection.canSync &&
-        s.enabled &&
+        s.provider.group === "API Агрегаторы" &&
+        !s.provider.manualSyncOnly &&
         (scope.city
           ? s.scopeId === scopeId
           : this.store.scope(s.scopeId).country === scope.country),

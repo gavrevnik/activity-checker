@@ -6,7 +6,7 @@ import {
   X,
   AlertCircle,
   MapPin,
-  Download,
+  UserRound,
 } from "lucide-react";
 import type {
   Candidate,
@@ -16,13 +16,20 @@ import type {
   SourceView,
   SyncRun,
   SyncResult,
+  SyncOptions,
+  UserProfile,
+  UserProfileInput,
+  FilteringRules,
+  FilteringRulesView,
 } from "../shared/model";
 import { api } from "./api";
 import { Activities } from "./Activities";
 import { Sources } from "./Sources";
-import { EntityForm, SourceForm, ImportForm } from "./forms";
+import { EntityForm, SourceForm } from "./forms";
 import { Detail } from "./Detail";
 import { Busy } from "./components";
+import { SyncConfirmation } from "./SyncConfirmation";
+import { Profile } from "./Profile";
 interface Data {
   scopes: Scope[];
   providers: ProviderInfo[];
@@ -30,6 +37,8 @@ interface Data {
   entities: Entity[];
   candidates: Candidate[];
   runs: SyncRun[];
+  profile: UserProfile;
+  filterRules: FilteringRulesView;
 }
 export default function App() {
   const [data, setData] = useState<Data | null>(null),
@@ -39,9 +48,10 @@ export default function App() {
     [scopeId, setScopeId] = useState(
       localStorage.getItem("activity-scope") || "belgrade",
     ),
-    [form, setForm] = useState<"entity" | "source" | "import" | null>(null),
+    [form, setForm] = useState<"entity" | "source" | null>(null),
     [editing, setEditing] = useState<Entity>(),
     [source, setSource] = useState<SourceView>(),
+    [syncSource, setSyncSource] = useState<SourceView>(),
     [selected, setSelected] = useState(
       location.hash.startsWith("#activity/")
         ? decodeURIComponent(location.hash.slice(10))
@@ -94,17 +104,29 @@ export default function App() {
       setBusy("");
     }
   };
-  const runSource = (s: SourceView, mode: "test" | "sync") =>
+  const executeSource = (
+    s: SourceView,
+    mode: "test" | "sync",
+    options: SyncOptions | Record<string, never> = {},
+  ) =>
     action(s.id, async () => {
       const r = await api<SyncResult & { message?: string }>(
         "/sources/" + s.id + "/" + mode,
         "POST",
+        options,
       );
       return (
         r.message ||
-        `${s.name}: получено ${r.fetched}, новых ${r.created}, обновлено ${r.updated}, повторных ${r.duplicates}, ошибок ${r.errors}. ${r.warnings?.join(" ") || ""}`
+        `${s.name}: получено ${r.fetched}, новых ${r.created}, обновлено ${r.updated}, повторных ${r.duplicates}, отфильтровано ${r.filtered}, ошибок ${r.errors}. ${r.warnings?.join(" ") || ""}`
       );
     });
+  const runSource = (s: SourceView, mode: "test" | "sync") => {
+    if (mode === "sync" && s.provider.requiresSyncConfirmation) {
+      setSyncSource(s);
+      return;
+    }
+    void executeSource(s, mode);
+  };
   const scope = data?.scopes.find((s) => s.id === scopeId) || data?.scopes[0];
   return (
     <div className="app-shell">
@@ -130,24 +152,36 @@ export default function App() {
             <Plug size={16} />
             Источники
             {data &&
-              data.sources.some((s) => s.connection.status === "error") && (
-                <i className="nav-alert" />
-              )}
+              data.sources.some(
+                (s) =>
+                  !s.provider.hiddenFromSources &&
+                  s.provider.group !== "Свои источники" &&
+                  s.connection.status === "error",
+              ) && <i className="nav-alert" />}
+          </button>
+          <button
+            className={tab === "profile" ? "active" : ""}
+            onClick={() => setTab("profile")}
+          >
+            <UserRound size={16} />
+            Мой профиль
           </button>
         </nav>
-        <div className="scope-control">
-          <MapPin size={15} />
-          {data?.scopes.map((s) => (
-            <button
-              key={s.id}
-              className={scope?.id === s.id ? "selected" : ""}
-              aria-pressed={scope?.id === s.id}
-              onClick={() => setScopeId(s.id)}
-            >
-              {s.name}
-            </button>
-          ))}
-        </div>
+        {tab !== "profile" && (
+          <div className="scope-control">
+            <MapPin size={15} />
+            {data?.scopes.map((s) => (
+              <button
+                key={s.id}
+                className={scope?.id === s.id ? "selected" : ""}
+                aria-pressed={scope?.id === s.id}
+                onClick={() => setScopeId(s.id)}
+              >
+                {s.name}
+              </button>
+            ))}
+          </div>
+        )}
       </header>
       <main>
         {notice && (
@@ -186,11 +220,6 @@ export default function App() {
                 sources={data.sources}
                 scope={scope}
                 onOpen={open}
-                onAdd={() => {
-                  setEditing(undefined);
-                  setForm("entity");
-                }}
-                onImport={() => setForm("import")}
                 onStar={(e) =>
                   action(e.id, async () => {
                     await api("/entities/" + e.id, "PATCH", {
@@ -198,17 +227,32 @@ export default function App() {
                     });
                   })
                 }
-                onRemoveDemo={() =>
-                  action("demo", async () => {
-                    await api("/demo", "DELETE");
-                    return "Демонстрационные записи удалены.";
+                archiveBusy={busy === "archive-past"}
+                filterRules={data.filterRules}
+                rulesBusy={busy === "filter-rules"}
+                onSaveRules={(rules: FilteringRules) =>
+                  action("filter-rules", async () => {
+                    await api("/filter-rules", "PUT", rules);
+                    return "Правила сохранены и применены ко всей базе.";
+                  })
+                }
+                onArchivePast={() =>
+                  action("archive-past", async () => {
+                    const archived = await api<{
+                      archived: number;
+                      cutoffDate: string;
+                    }>("/entities/archive-past", "POST", {
+                      scopeId: scope.id,
+                    });
+                    return archived.archived
+                      ? `В архивную таблицу перенесено событий: ${archived.archived}.`
+                      : "Прошедших событий с подтверждённой датой не найдено.";
                   })
                 }
               />
-            ) : (
+            ) : tab === "sources" ? (
               <Sources
                 sources={data.sources}
-                providers={data.providers}
                 scopes={data.scopes}
                 scope={scope}
                 candidates={data.candidates}
@@ -218,11 +262,6 @@ export default function App() {
                   setSource(s);
                   setForm("source");
                 }}
-                onAdd={() => {
-                  setSource(undefined);
-                  setForm("source");
-                }}
-                onRefresh={() => action("refresh", async () => {})}
                 onAction={runSource}
                 onSyncAll={() =>
                   action("all", async () => {
@@ -236,6 +275,19 @@ export default function App() {
                     const fails = rows.filter(
                       (r) => r.error || r.result?.errors,
                     );
+                    const confirmationSource = data.sources.find((source) => {
+                      const location = data.scopes.find(
+                        (candidate) => candidate.id === source.scopeId,
+                      );
+                      return (
+                        source.provider.group === "API Агрегаторы" &&
+                        source.provider.requiresSyncConfirmation &&
+                        source.connection.canSync &&
+                        location?.country === scope.country &&
+                        (!scope.city || source.scopeId === scope.id)
+                      );
+                    });
+                    if (confirmationSource) setSyncSource(confirmationSource);
                     if (fails.length)
                       throw new Error(
                         rows
@@ -246,39 +298,31 @@ export default function App() {
                           )
                           .join("\n"),
                       );
-                    return `Синхронизировано источников: ${rows.length}. Новых записей: ${rows.reduce((n, r) => n + (r.result?.created || 0), 0)}.`;
+                    return `Синхронизировано источников: ${rows.length}. Новых записей: ${rows.reduce((n, r) => n + (r.result?.created || 0), 0)}. Отфильтровано: ${rows.reduce((n, r) => n + (r.result?.filtered || 0), 0)}.`;
                   })
                 }
                 onCandidate={(id, mode) =>
                   action(id, async () => {
                     await api("/candidates/" + id, "POST", { action: mode });
                     return mode === "accept"
-                      ? "Источник добавлен выключенным. Откройте его настройки."
+                      ? "Источник добавлен. Откройте его настройки."
                       : "Кандидат скрыт.";
                   })
                 }
                 onOpen={open}
               />
+            ) : (
+              <Profile
+                profile={data.profile}
+                busy={busy === "profile"}
+                onSave={(profile: UserProfileInput) =>
+                  action("profile", async () => {
+                    await api("/profile", "PUT", profile);
+                    return "Профиль сохранён в локальной базе.";
+                  })
+                }
+              />
             )}
-            <footer className="app-footer">
-              <span>
-                <i />
-                Локальная база · обновление вручную
-              </span>
-              <div>
-                <a href="/api/export">
-                  <Download size={12} />
-                  Экспорт JSON
-                </a>
-                <a
-                  href="https://www.openstreetmap.org/copyright"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  © OpenStreetMap contributors
-                </a>
-              </div>
-            </footer>
             {selected && !form && (
               <Detail
                 key={selected}
@@ -311,8 +355,17 @@ export default function App() {
                 onSaved={refresh}
               />
             )}{" "}
-            {form === "import" && (
-              <ImportForm onClose={() => setForm(null)} onSaved={refresh} />
+            {syncSource && (
+              <SyncConfirmation
+                source={syncSource}
+                busy={busy === syncSource.id}
+                onClose={() => setSyncSource(undefined)}
+                onConfirm={(options) => {
+                  const selectedSource = syncSource;
+                  setSyncSource(undefined);
+                  void executeSource(selectedSource, "sync", options);
+                }}
+              />
             )}
           </>
         )}

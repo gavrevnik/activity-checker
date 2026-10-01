@@ -17,12 +17,14 @@ export const ticketmaster = defineProvider(
   {
     id: "ticketmaster",
     name: "Ticketmaster",
-    group: "Международные",
+    group: "Другое",
     providerType: "API",
     supportedEntityTypes: ["Event"],
     supportedScopes: ["*"],
     implemented: true,
     mode: "ingestion",
+    configFields: ["scope", "keyword"],
+    otherSource: true,
     description: "События из Discovery API; покрытие зависит от страны.",
     credentials: [{ key: "TICKETMASTER_API_KEY", label: "Consumer key" }],
     registration: {
@@ -42,7 +44,7 @@ export const ticketmaster = defineProvider(
     steps: [
       "Создайте приложение в Ticketmaster Developer Portal.",
       "Скопируйте Consumer key в TICKETMASTER_API_KEY в .env.local.",
-      "Включите источник → «Проверить» → «Синхронизировать». Ключ перечитывается автоматически.",
+      "Нажмите значок синхронизации в строке. Ключ перечитывается автоматически.",
     ],
     limitations:
       "Для Сербии результат может быть пустым. До 1 000 событий за запуск; запросы ограничены глубиной Discovery API.",
