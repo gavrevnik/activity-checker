@@ -22,6 +22,8 @@
     "telegram:auth": "node --import tsx scripts/telegram-tool.ts --authorize",
     "telegram:tool": "node --import tsx scripts/telegram-tool.ts",
     "telegram:mcp": "node --import tsx scripts/telegram-mcp.ts",
+    "telegram:discovery:mcp": "node --import tsx scripts/telegram-mcp.ts",
+    "telegram:monitoring:mcp": "node --import tsx scripts/telegram-monitoring-mcp.ts",
     "telegram:research": "node --import tsx scripts/telegram-research.ts",
     "foursquare:mcp": "node --import tsx scripts/foursquare-mcp.ts",
     "google-places:mcp": "node --import tsx scripts/google-places-mcp.ts",

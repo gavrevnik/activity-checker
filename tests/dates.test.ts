@@ -1,6 +1,7 @@
 import { it, expect } from "vitest";
 import {
   eventDateLabel,
+  eventDateRangeLabel,
   fromLocalDateTime,
   inDateRange,
   inPeriod,
@@ -18,6 +19,64 @@ it("formats an event date with its local weekday and known time", () => {
     "2026-05-10 · Вс",
   );
   expect(eventDateLabel("")).toBe("");
+});
+
+it("formats both ends of an event interval with full dates and local times", () => {
+  expect(
+    eventDateRangeLabel(
+      "2026-05-01T08:00:00Z",
+      "2026-05-10T18:00:00Z",
+    ),
+  ).toBe("2026-05-01 · Пт · 10:00 - 2026-05-10 · Вс · 20:00");
+  expect(
+    eventDateRangeLabel(
+      "2026-10-02T17:00:00+02:00",
+      "2026-10-02T19:00:00+02:00",
+    ),
+  ).toBe("2026-10-02 · Пт · 17:00 - 2026-10-02 · Пт · 19:00");
+});
+
+it("keeps each interval endpoint's precision and respects the selected timezone", () => {
+  expect(
+    eventDateRangeLabel("2026-10-02", "2026-10-04", "Pacific/Kiritimati"),
+  ).toBe("2026-10-02 · Пт - 2026-10-04 · Вс");
+  expect(
+    eventDateRangeLabel("2026-10-02T17:00:00+02:00", "2026-10-04"),
+  ).toBe("2026-10-02 · Пт · 17:00 - 2026-10-04 · Вс");
+  expect(
+    eventDateRangeLabel("2026-10-02", "2026-10-04T18:00:00Z"),
+  ).toBe("2026-10-02 · Пт - 2026-10-04 · Вс · 20:00");
+  expect(
+    eventDateRangeLabel(
+      "2026-09-30T23:30:00Z",
+      "2026-10-02T22:00:00Z",
+      "UTC",
+    ),
+  ).toBe("2026-09-30 · Ср · 23:30 - 2026-10-02 · Пт · 22:00");
+  expect(
+    eventDateRangeLabel(
+      "2026-10-24T18:00:00Z",
+      "2026-10-25T18:00:00Z",
+    ),
+  ).toBe("2026-10-24 · Сб · 20:00 - 2026-10-25 · Вс · 19:00");
+});
+
+it("keeps single dates and does not repeat identical or invalid endpoints", () => {
+  expect(eventDateRangeLabel("2026-10-02")).toBe("2026-10-02 · Пт");
+  expect(eventDateRangeLabel("2026-10-02", "2026-10-02")).toBe(
+    "2026-10-02 · Пт",
+  );
+  expect(
+    eventDateRangeLabel(
+      "2026-10-02T17:00:00+02:00",
+      "2026-10-02T15:00:00Z",
+    ),
+  ).toBe("2026-10-02 · Пт · 17:00");
+  expect(eventDateRangeLabel("2026-10-02", "invalid")).toBe(
+    "2026-10-02 · Пт",
+  );
+  expect(eventDateRangeLabel("", "2026-10-04")).toBe("");
+  expect(eventDateRangeLabel("invalid", "2026-10-04")).toBe("");
 });
 
 it("includes the rest of this week and all of next week", () => {

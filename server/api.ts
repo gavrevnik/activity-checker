@@ -2,6 +2,7 @@ import express from "express";
 import { z, ZodError } from "zod";
 import {
   entitySchema,
+  entityReactions,
   filteringRulesSchema,
   importSchema,
   sourceSchema,
@@ -12,6 +13,15 @@ import { SyncService } from "./sync.js";
 import { providers, providerInfo } from "./providers/registry.js";
 import { importEntities } from "./import.js";
 import { safeError } from "./secrets.js";
+import { registerAiEventsReviewApi } from "./ai-events-review.js";
+import { registerAiMcpDiscoveryApi } from "./ai-mcp-discovery.js";
+import { registerTelegramEventsApi } from "./telegram-events.js";
+import { AiDigests, registerAiDigestsApi } from "./ai-digests.js";
+import { dislikeReasonSchema } from "../shared/personal-state.js";
+import {
+  readAutoArchiveSettings,
+  saveAutoArchiveSettings,
+} from "./auto-archive.js";
 export function createApi(store: Store, port: number) {
   const app = express();
   const sync = new SyncService(store);
@@ -49,6 +59,10 @@ export function createApi(store: Store, port: number) {
     res.setHeader("Cache-Control", "no-store");
     next();
   });
+  registerAiEventsReviewApi(app, store);
+  registerAiMcpDiscoveryApi(app, store);
+  registerTelegramEventsApi(app, store);
+  registerAiDigestsApi(app, store);
   app.get("/api/bootstrap", (_req, res) =>
     res.json({
       scopes: store.scopes(),
@@ -67,15 +81,18 @@ export function createApi(store: Store, port: number) {
   app.get("/api/entities/:id", (req, res) =>
     res.json(store.entity(req.params.id)),
   );
-  app.post("/api/entities/archive-past", (req, res) =>
-    res.json(
-      store.archivePastEvents(
-        z
-          .object({ scopeId: z.string().min(1) })
-          .strict()
-          .parse(req.body).scopeId,
-      ),
-    ),
+  app.post("/api/entities/archive-past", (req, res) => {
+    const { scopeId } = z.object({ scopeId: z.string().min(1) }).strict().parse(req.body);
+    res.json(store.transaction(() => ({
+      ...store.archivePastEvents(scopeId),
+      archivedDigests: new AiDigests(store).archivePast(scopeId).archived,
+    })));
+  });
+  app.get("/api/auto-archive/settings", (_req, res) =>
+    res.json(readAutoArchiveSettings(store)),
+  );
+  app.put("/api/auto-archive/settings", (req, res) =>
+    res.json(saveAutoArchiveSettings(store, req.body)),
   );
   app.get("/api/profile", (_req, res) => res.json(store.profile()));
   app.put("/api/profile", (req, res) =>
@@ -102,7 +119,11 @@ export function createApi(store: Store, port: number) {
           .object({
             archived: z.boolean().optional(),
             favorite: z.boolean().optional(),
+            reaction: z.enum(entityReactions).optional(),
             notes: z.string().max(10000).optional(),
+            dislikeReason: dislikeReasonSchema.optional(),
+            skipped: z.boolean().optional(),
+            skipReason: dislikeReasonSchema.optional(),
           })
           .strict()
           .parse(req.body),

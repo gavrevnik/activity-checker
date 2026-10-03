@@ -5,6 +5,7 @@ import express from "express";
 import { Store } from "./store.js";
 import { createApi } from "./api.js";
 import { seedDemo } from "./demo.js";
+import { autoArchivePastEvents } from "./auto-archive.js";
 let runtime: Record<string, string> = {};
 try {
   runtime = parse(readFileSync(".env.local"));
@@ -18,6 +19,9 @@ const store = new Store(
     "../data/activity-checker/activity.sqlite",
 );
 seedDemo(store);
+const autoArchive = autoArchivePastEvents(store);
+if (autoArchive.archived)
+  console.log(`Автоархив: ${autoArchive.archived} прошедших мероприятий.`);
 const app = createApi(store, port);
 if (process.argv.includes("--production")) {
   app.use(express.static(resolve("dist")));

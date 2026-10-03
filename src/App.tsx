@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Layers,
   Plug,
@@ -30,6 +30,8 @@ import { Detail } from "./Detail";
 import { Busy } from "./components";
 import { SyncConfirmation } from "./SyncConfirmation";
 import { Profile } from "./Profile";
+import { createEntityStateUpdater } from "./entity-state";
+import { saveEntityState } from "./entity-state-api";
 interface Data {
   scopes: Scope[];
   providers: ProviderInfo[];
@@ -48,6 +50,7 @@ export default function App() {
     [scopeId, setScopeId] = useState(
       localStorage.getItem("activity-scope") || "belgrade",
     ),
+    [activityNavigationVersion, setActivityNavigationVersion] = useState(0),
     [form, setForm] = useState<"entity" | "source" | null>(null),
     [editing, setEditing] = useState<Entity>(),
     [source, setSource] = useState<SourceView>(),
@@ -58,6 +61,9 @@ export default function App() {
         : "",
     ),
     [busy, setBusy] = useState(""),
+    [pendingEntityIds, setPendingEntityIds] = useState<ReadonlySet<string>>(
+      () => new Set(),
+    ),
     [notice, setNotice] = useState<{ text: string; error: boolean } | null>(
       null,
     );
@@ -82,14 +88,34 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("activity-scope", scopeId);
   }, [scopeId]);
-  const open = (id: string) => {
+  const open = useCallback((id: string) => {
     location.hash = "activity/" + encodeURIComponent(id);
     setSelected(id);
-  };
+  }, []);
   const closeDetail = () => {
     history.replaceState(null, "", location.pathname + location.search);
     setSelected("");
   };
+  const showActivities = () => {
+    setTab("activities");
+    setActivityNavigationVersion((version) => version + 1);
+  };
+  const saveFilterRules = useCallback(
+    async (rules: FilteringRules) => {
+      setBusy("filter-rules");
+      setNotice(null);
+      try {
+        await api("/filter-rules", "PUT", rules);
+        await refresh();
+      } catch (error) {
+        setNotice({ text: (error as Error).message, error: true });
+        throw error;
+      } finally {
+        setBusy("");
+      }
+    },
+    [refresh],
+  );
   const action = async (key: string, fn: () => Promise<string | void>) => {
     setBusy(key);
     setNotice(null);
@@ -104,6 +130,35 @@ export default function App() {
       setBusy("");
     }
   };
+  const setEntityState = useMemo(
+    () =>
+      createEntityStateUpdater({
+        save: saveEntityState,
+        patch: (id, state) =>
+          setData((current) =>
+            current
+              ? {
+                  ...current,
+                  entities: current.entities.map((item) =>
+                    item.id === id ? { ...item, ...state } : item,
+                  ),
+                }
+              : current,
+          ),
+        pending: (id, value) => {
+          if (value) setNotice(null);
+          setPendingEntityIds((current) => {
+            const next = new Set(current);
+            if (value) next.add(id);
+            else next.delete(id);
+            return next;
+          });
+        },
+        reportError: (error) =>
+          setNotice({ text: (error as Error).message, error: true }),
+      }),
+    [],
+  );
   const executeSource = (
     s: SourceView,
     mode: "test" | "sync",
@@ -131,7 +186,7 @@ export default function App() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <a className="brand" href="#" onClick={() => setTab("activities")}>
+        <a className="brand" href="#" onClick={showActivities}>
           <img src="/favicon.svg" alt="" />
           <span>
             activity<span className="brand-light"> checker</span>
@@ -140,7 +195,7 @@ export default function App() {
         <nav aria-label="Основная навигация">
           <button
             className={tab === "activities" ? "active" : ""}
-            onClick={() => setTab("activities")}
+            onClick={showActivities}
           >
             <Layers size={16} />
             Активности
@@ -216,26 +271,17 @@ export default function App() {
           <>
             {tab === "activities" ? (
               <Activities
+                navigationVersion={activityNavigationVersion}
                 entities={data.entities}
                 sources={data.sources}
                 scope={scope}
                 onOpen={open}
-                onStar={(e) =>
-                  action(e.id, async () => {
-                    await api("/entities/" + e.id, "PATCH", {
-                      favorite: !e.favorite,
-                    });
-                  })
-                }
+                onSetState={setEntityState}
+                pendingEntityIds={pendingEntityIds}
                 archiveBusy={busy === "archive-past"}
                 filterRules={data.filterRules}
                 rulesBusy={busy === "filter-rules"}
-                onSaveRules={(rules: FilteringRules) =>
-                  action("filter-rules", async () => {
-                    await api("/filter-rules", "PUT", rules);
-                    return "Правила сохранены и применены ко всей базе.";
-                  })
-                }
+                onSaveRules={saveFilterRules}
                 onArchivePast={() =>
                   action("archive-past", async () => {
                     const archived = await api<{

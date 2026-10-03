@@ -1,0 +1,6 @@
+interface:
+  display_name: "Digest"
+  short_description: "Персональный дайджест событий по датам и интересам"
+  default_prompt: "Используй $digest: подготовь дайджест активностей на ближайшие выходные с обновлением источников и AI-оценок по моему профилю."
+policy:
+  allow_implicit_invocation: true

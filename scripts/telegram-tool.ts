@@ -56,7 +56,7 @@ Dry-run plan (does not call Telegram):
 
 Execute one batch and return public results:
   npm run telegram:tool -- --query "squash belgrade" --query "сквош белград" \\
-    --operation searchPublicChats --operation channels.searchPosts --max-items 20 --execute
+    --operation searchPublicChats --max-items 20 --execute
 
 Filter channels with a known audience below 200:
   add --min-participants 200
@@ -64,8 +64,9 @@ Filter channels with a known audience below 200:
 Store normalized results in Activity Checker SQLite:
   add --store to an --execute call
 
-Operations: searchPublicChats, channels.searchPosts, messages.searchGlobal,
-channels.getChannelRecommendations. Recommendations accept --seed https://t.me/channel.
+Operations: searchPublicChats, channels.getChannelRecommendations.
+Recommendations accept --seed https://t.me/channel. Post search is intentionally
+disabled; use the separate Telegram monitoring MCP for channel history.
 Up to 30 queries are executed sequentially in one authorized session.`);
 }
 
@@ -137,7 +138,7 @@ async function main() {
   const seedChannels = argumentsFor("--seed");
   const selectedOperations = operations.length
     ? operations
-    : ["searchPublicChats", "channels.searchPosts"];
+    : ["searchPublicChats"];
   if (
     !queries.length &&
     !selectedOperations.includes("channels.getChannelRecommendations")
@@ -155,8 +156,6 @@ async function main() {
       nonNegativeInteger("--min-participants", 0),
       10_000_000,
     ),
-    minDate: argument("--from"),
-    maxDate: argument("--to"),
     store: process.argv.includes("--store"),
     sourceId: argument("--source") || "source-telegram",
   };

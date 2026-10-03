@@ -272,7 +272,7 @@
               {
                 "type": "number",
                 "minimum": 0,
-                "maximum": 100
+                "maximum": 10
               },
               {
                 "type": "null"

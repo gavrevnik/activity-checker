@@ -1,0 +1,4 @@
+interface:
+  display_name: "AI Events Review"
+  short_description: "Оценка событий 0–10 по профилю и личным реакциям"
+  default_prompt: "Используй $ai-events-review, чтобы оценить будущие мероприятия Activity Checker, обновив summary пользовательских предпочтений."

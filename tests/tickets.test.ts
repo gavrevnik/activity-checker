@@ -26,6 +26,8 @@ const event = (Id = 1, overrides = {}) => ({
 });
 let store: Store, ctx: ProviderContext;
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-10-01T12:00:00Z"));
   store = new Store(":memory:");
   ctx = {
     source: { ...store.source("source-tickets"), enabled: true },
@@ -34,7 +36,10 @@ beforeEach(() => {
   };
   request.mockReset();
 });
-afterEach(() => store.close());
+afterEach(() => {
+  vi.useRealTimers();
+  store.close();
+});
 function mockAPI(
   pages: Record<number, unknown[][]>,
   transform = (data: any) => data,

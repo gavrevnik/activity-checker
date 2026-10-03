@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   CalendarX2,
   MapPinOff,
-  Save,
+  CheckCircle2,
   SearchX,
   Tags,
   TicketX,
@@ -12,29 +12,12 @@ import type {
   FilteringRules as FilteringRulesValue,
   FilteringRulesView,
 } from "../shared/model";
-import { Busy, Button } from "./components";
-
-const formatTerms = (terms: string[]) => terms.join(", ");
-const parseTerms = (value: string) => {
-  const seen = new Set<string>();
-  return value
-    .split(/[,\n]/u)
-    .map((term) => term.trim())
-    .filter((term) => {
-      const key = term.toLocaleLowerCase();
-      if (!term || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-};
-const draftsFrom = (rules: FilteringRulesValue) => ({
-  ticketVenues: formatTerms(rules.ticketsVenue.venues),
-  ticketKeywords: formatTerms(rules.ticketsVenue.keywords),
-  ticketTitleKeywords: formatTerms(rules.ticketsVenue.titleKeywords),
-  titleKeywords: formatTerms(rules.eventTitle.keywords),
-  locationKeywords: formatTerms(rules.eventLocation.keywords),
-  tagKeywords: formatTerms(rules.entityTags.keywords),
-});
+import { Busy } from "./components";
+import {
+  ruleDraftsFrom as draftsFrom,
+  rulesFromDrafts,
+} from "./filtering-rules-draft";
+import "./filtering-rules.css";
 
 export function FilteringRules({
   value,
@@ -43,24 +26,74 @@ export function FilteringRules({
 }: {
   value: FilteringRulesView;
   busy: boolean;
-  onSave: (rules: FilteringRulesValue) => void;
+  onSave: (rules: FilteringRulesValue) => Promise<void>;
 }) {
   const [rules, setRules] = useState(value.rules);
   const [drafts, setDrafts] = useState(() => draftsFrom(value.rules));
+  const [saving, setSaving] = useState(false);
+  const [savedNotice, setSavedNotice] = useState(0);
+  const inFlight = useRef(false);
   useEffect(() => {
     setRules(value.rules);
     setDrafts(draftsFrom(value.rules));
-  }, [value]);
+  }, [value.rules]);
+  useEffect(() => {
+    if (!savedNotice) return;
+    const timer = setTimeout(() => setSavedNotice(0), 3000);
+    return () => clearTimeout(timer);
+  }, [savedNotice]);
+  const apply = async (nextRules = rules) => {
+    if (inFlight.current || busy) return;
+    inFlight.current = true;
+    setSaving(true);
+    setSavedNotice(0);
+    const focused = document.activeElement;
+    try {
+      await onSave(rulesFromDrafts(nextRules, drafts));
+      setSavedNotice((current) => current + 1);
+    } catch {
+      // App reports the failure; keep drafts available for an explicit Enter retry.
+    } finally {
+      inFlight.current = false;
+      setSaving(false);
+      requestAnimationFrame(() => {
+        if (
+          focused instanceof HTMLElement &&
+          focused.isConnected &&
+          document.activeElement === document.body
+        )
+          focused.focus();
+      });
+    }
+  };
   const update = <K extends keyof FilteringRulesValue>(
     key: K,
     patch: Partial<FilteringRulesValue[K]>,
-  ) =>
-    setRules((current) => ({
-      ...current,
-      [key]: { ...current[key], ...patch },
-    }));
+  ) => {
+    const next = { ...rules, [key]: { ...rules[key], ...patch } };
+    setRules(next);
+    if ("enabled" in patch) void apply(next);
+  };
   return (
-    <section className="filter-rules-page">
+    <section
+      className="filter-rules-page"
+      onKeyDown={(event) => {
+        if (
+          event.key !== "Enter" ||
+          event.shiftKey ||
+          event.nativeEvent.isComposing
+        )
+          return;
+        const target = event.target;
+        if (
+          !(target instanceof HTMLTextAreaElement) &&
+          !(target instanceof HTMLInputElement && target.type !== "checkbox")
+        )
+          return;
+        event.preventDefault();
+        if (!event.repeat) void apply();
+      }}
+    >
       <div className="filter-rules-intro">
         <div>
           <h2>Статичные правила</h2>
@@ -72,7 +105,11 @@ export function FilteringRules({
         </div>
         <span className="count">Скрыто: {value.counts.total}</span>
       </div>
-      <div className="filter-rules-grid">
+      <fieldset
+        className="filter-rules-grid"
+        disabled={busy || saving}
+        aria-label="Правила фильтрации"
+      >
         <article className="filter-rule-card">
           <header>
             <CalendarX2 size={20} />
@@ -318,39 +355,24 @@ export function FilteringRules({
             <small>Сейчас скрыто: {value.counts.entityTags}</small>
           </div>
         </article>
-      </div>
-      <div className="filter-rules-actions">
-        <Button
-          primary
-          disabled={busy}
-          onClick={() =>
-            onSave({
-              ...rules,
-              ticketsVenue: {
-                ...rules.ticketsVenue,
-                venues: parseTerms(drafts.ticketVenues),
-                keywords: parseTerms(drafts.ticketKeywords),
-                titleKeywords: parseTerms(drafts.ticketTitleKeywords),
-              },
-              eventTitle: {
-                ...rules.eventTitle,
-                keywords: parseTerms(drafts.titleKeywords),
-              },
-              eventLocation: {
-                ...rules.eventLocation,
-                keywords: parseTerms(drafts.locationKeywords),
-              },
-              entityTags: {
-                ...rules.entityTags,
-                keywords: parseTerms(drafts.tagKeywords),
-              },
-            })
-          }
-        >
-          {busy ? <Busy /> : <Save size={15} />}
-          Сохранить и применить
-        </Button>
-      </div>
+      </fieldset>
+      <p
+        className="filter-rules-save-hint"
+        role={busy || saving ? "status" : undefined}
+      >
+        {busy || saving ? (
+          <>
+            <Busy /> Применение изменений…
+          </>
+        ) : (
+          "Enter — применить изменения · Shift+Enter — новая строка. Переключатели применяются сразу."
+        )}
+      </p>
+      {savedNotice > 0 && (
+        <div className="filter-rules-toast" role="status">
+          <CheckCircle2 size={16} /> Изменения применены
+        </div>
+      )}
     </section>
   );
 }

@@ -11,17 +11,16 @@ import {
 import {
   estimatedTelegramRequests,
   executeTelegramBatch,
-  telegramOperations,
+  telegramDiscoveryOperations,
   telegramQueriesFromText,
   telegramResultSchema,
   telegramStatus,
-  type TelegramOperation,
+  type TelegramDiscoveryOperation,
   type TelegramSearchResult,
 } from "./client.js";
 
-export const defaultTelegramOperations: TelegramOperation[] = [
+export const defaultTelegramOperations: TelegramDiscoveryOperation[] = [
   "searchPublicChats",
-  "channels.searchPosts",
 ];
 
 function credentials(ctx: ProviderContext) {
@@ -37,9 +36,9 @@ function settings(ctx: ProviderContext, options: SyncOptions) {
   const queries = telegramQueriesFromText(ctx.source.keyword);
   const operations = (
     options.operations?.length ? options.operations : defaultTelegramOperations
-  ) as TelegramOperation[];
+  ) as TelegramDiscoveryOperation[];
   const invalid = operations.filter(
-    (operation) => !telegramOperations.includes(operation),
+    (operation) => !telegramDiscoveryOperations.includes(operation),
   );
   if (invalid.length)
     throw new Error(`Неизвестные Telegram operations: ${invalid.join(", ")}`);
@@ -163,13 +162,13 @@ export const telegram = defineProvider(
     name: "Telegram MTProto · Discovery",
     group: "MCP",
     providerType: "MTProto tool",
-    supportedEntityTypes: ["Event", "Community"],
+    supportedEntityTypes: ["Community"],
     supportedScopes: ["*"],
     implemented: true,
     mode: "discovery",
     configFields: ["url", "keyword"],
     description:
-      "MCP · Batch-поиск публичных Telegram-каналов и постов по ключевым гипотезам.",
+      "MCP discovery и monitoring: поиск каналов и постраничное чтение их истории.",
     credentials: [
       { key: "TELEGRAM_API_ID", label: "API ID" },
       { key: "TELEGRAM_API_HASH", label: "API hash" },
@@ -178,7 +177,7 @@ export const telegram = defineProvider(
     manualSyncOnly: true,
     requiresSyncConfirmation: true,
     modelCallable: true,
-    mcpServer: "Activity Checker Telegram",
+    mcpServer: "Activity Checker Telegram Discovery + Monitoring",
     mcpTools: [
       {
         name: "telegram_status",
@@ -194,22 +193,46 @@ export const telegram = defineProvider(
         description: "Ищет публичные каналы и группы по названию или username.",
       },
       {
-        name: "telegram_search_posts",
-        description: "Ищет публикации в публичных Telegram-каналах.",
-      },
-      {
-        name: "telegram_search_global",
-        description:
-          "Выполняет глобальный поиск сообщений в публичных каналах и группах.",
-      },
-      {
         name: "telegram_channel_recommendations",
         description: "Находит похожие каналы по заданным seed-каналам.",
       },
       {
-        name: "telegram_sample_channel_posts",
+        name: "telegram_discovery_filter_candidates",
+        description: "Убирает известные, скрытые, исключённые каналы и дубли без Telegram-запросов.",
+      },
+      {
+        name: "telegram_channel_info",
+        description: "Получает описание, размер, признак тем и связанный чат кандидата.",
+      },
+      {
+        name: "telegram_channel_pinned_messages",
+        description: "Читает текущие закрепы без дат и обхода всей истории.",
+      },
+      {
+        name: "telegram_discovery_recent_posts",
+        description: "Читает ограниченную выборку свежих постов кандидатов через monitoring worker.",
+      },
+      { name: "telegram_group_topics", description: "Получает темы форума с ID, названиями, датами активности и курсором." },
+      { name: "telegram_topic_posts", description: "Читает сообщения выбранной темы группы, включая ответы." },
+      { name: "telegram_linked_chat_posts", description: "Проверяет живое общение в подтверждённом связанном чате канала." },
+      { name: "telegram_post_comments", description: "Читает комментарии конкретного поста через подтверждённый корень обсуждения." },
+      {
+        name: "telegram_search_channel_messages",
+        description: "Ищет по тексту только внутри выбранных каналов; доступен в discovery и monitoring, без Stars.",
+      },
+      {
+        name: "telegram_monitoring_status",
+        description: "Проверяет общую Telethon-сессию без чтения истории.",
+      },
+      {
+        name: "telegram_monitoring_channels",
         description:
-          "Читает небольшую выборку последних постов для проверки релевантности.",
+          "Возвращает Telegram-сообщества из Activity Checker без внешнего запроса.",
+      },
+      {
+        name: "telegram_monitoring_posts",
+        description:
+          "Читает историю выбранных каналов по датам с метаданными и детерминированными фильтрами.",
       },
       {
         name: "telegram_query_history",
@@ -233,10 +256,12 @@ export const telegram = defineProvider(
       "Ключи API ID/API hash хранятся в .env.local; Python-worker устанавливается командой npm run telegram:setup.",
       "Один раз выполните npm run telegram:auth и в терминале введите телефон, код Telegram и 2FA-пароль при наличии.",
       "Добавьте до 30 поисковых гипотез по одной на строку. URL источника можно использовать как seed для рекомендаций.",
-      "Перед Sync выберите поиск каналов, публичных постов, глобальный поиск или рекомендации и проверьте число MTProto-запросов.",
+      "Discovery: поиск по названию → убрать известные → описание/размер → закрепы → свежие посты → рекомендации релевантных seed-каналов.",
+      "Точечный поиск по тексту доступен внутри выбранных каналов; глобальный поиск постов отключён.",
+      "Monitoring читает историю конкретных сохранённых каналов с диапазоном дат и incremental message ID.",
     ],
     limitations:
-      "Нет тарификации за результат. Запросы идут от пользовательского аккаунта и ограничиваются Telegram FloodWait/Premium; channels.searchPosts может исчерпать бесплатные full-text slots, но tool никогда не разрешает оплату Stars.",
+      "Нет тарификации за результат и Stars не используются. Запросы идут от пользовательского аккаунта и ограничиваются Telegram FloodWait; private channels требуют доступа аккаунта.",
   },
   {
     async testConnection(ctx) {
@@ -250,11 +275,6 @@ export const telegram = defineProvider(
     },
     async planSync(ctx, options) {
       const selected = settings(ctx, options);
-      const today = new Date();
-      const defaultEndDate = today.toISOString().slice(0, 10);
-      const defaultStartDate = new Date(today.getTime() - 90 * 86_400_000)
-        .toISOString()
-        .slice(0, 10);
       const requests = estimatedTelegramRequests({
         queryCount: selected.queries.length,
         operations: selected.operations,
@@ -269,8 +289,6 @@ export const telegram = defineProvider(
         expectedRequests: requests,
         minimumRequests: requests,
         maximumRequests: requests,
-        startDate: options.startDate || defaultStartDate,
-        endDate: options.endDate || defaultEndDate,
         resultsPerQuery: selected.resultsPerQuery,
         limits: { maxItems: selected.maxItems },
         operations: selected.operations,
@@ -278,14 +296,6 @@ export const telegram = defineProvider(
           {
             value: "searchPublicChats",
             label: "searchPublicChats · каналы/группы по названию",
-          },
-          {
-            value: "channels.searchPosts",
-            label: "channels.searchPosts · посты публичных каналов",
-          },
-          {
-            value: "messages.searchGlobal",
-            label: "messages.searchGlobal · глобальные сообщения",
           },
           {
             value: "channels.getChannelRecommendations",
@@ -305,8 +315,7 @@ export const telegram = defineProvider(
         ],
         warnings: [
           "FloodWait немедленно остановит batch; повторный запуск нужно делать после указанной Telegram паузы.",
-          "Посты сохраняются как кандидаты Event без даты события и с тегом needs-event-review: дата публикации не подменяет дату мероприятия.",
-          "channels.searchPosts может требовать Premium или Stars после бесплатных поисков; автоматическая оплата отключена.",
+          "Discovery возвращает только каналы/группы; их посты читает отдельный monitoring MCP.",
         ],
       };
     },
@@ -319,8 +328,6 @@ export const telegram = defineProvider(
         seedChannels: selected.seedChannels,
         resultsPerQuery: selected.resultsPerQuery,
         maxItems: selected.maxItems,
-        minDate: options.startDate,
-        maxDate: options.endDate,
         delaySeconds: 2.5,
       });
       const items = response.results.map(telegramRawItem);

@@ -1,10 +1,6 @@
 import { z } from "zod";
 
-export const entityTypes = [
-  "Event",
-  "Place",
-  "Community",
-] as const;
+export const entityTypes = ["Event", "Place", "Community"] as const;
 export type EntityType = (typeof entityTypes)[number];
 export const typeLabels: Record<EntityType, string> = {
   Event: "События",
@@ -86,7 +82,7 @@ export const entitySchema = z
     externalId: z.string().trim().max(500).optional(),
     knownIds: z.record(z.string().max(80), z.string().max(500)).default({}),
     demo: z.boolean().default(false),
-    aiScore: z.number().min(0).max(100).nullable().default(null),
+    aiScore: z.number().min(0).max(10).nullable().default(null),
     aiDecision: z.enum(["unknown", "recommended", "hidden"]).default("unknown"),
     aiReason: text.nullable().default(null),
     aiTags: z.array(z.string()).max(50).default([]),
@@ -100,10 +96,32 @@ export const entitySchema = z
   );
 export type EntityInput = z.input<typeof entitySchema>;
 export type NormalizedEntity = z.output<typeof entitySchema>;
+export const entityReactions = ["", "like", "dislike"] as const;
+export type EntityReaction = (typeof entityReactions)[number];
+export interface EntityPresentation {
+  version: number;
+  timeZone: string;
+  startDay: string;
+  endDay: string;
+  startHour: number | null;
+  dateLabel: string;
+  dayNumber: string;
+  monthLabel: string;
+  searchText: string;
+  hasSerbianTitle: boolean;
+  isRestaurant: boolean;
+  memberCountLabel: string;
+  googleReviewCountLabel: string;
+}
 export interface Entity extends NormalizedEntity {
+  presentation: EntityPresentation;
   id: string;
   archived: boolean;
   favorite: boolean;
+  reaction: EntityReaction;
+  dislikeReason: string;
+  skipped: boolean;
+  skipReason: string;
   notes: string;
   filtered: boolean;
   filterReasons: FilterRuleCode[];

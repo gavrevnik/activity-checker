@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Store } from "../server/store";
 import { importEntities } from "../server/import";
 import { entitySchema, type EntityInput } from "../shared/model";
@@ -10,7 +10,10 @@ import {
 } from "../server/profile";
 let store: Store;
 beforeEach(() => (store = new Store(":memory:")));
-afterEach(() => store.close());
+afterEach(() => {
+  vi.useRealTimers();
+  store.close();
+});
 const place: EntityInput = {
   type: "Place",
   title: "Boulder Room",
@@ -140,7 +143,7 @@ describe("canonical ingestion", () => {
     store.editEntity(id, {
       ...input(id),
       title: "My title",
-      aiScore: 91,
+      aiScore: 9.1,
       aiDecision: "recommended",
     });
     store.setState(id, { favorite: true, archived: true, notes: "Try this" });
@@ -151,10 +154,50 @@ describe("canonical ingestion", () => {
     const e = store.entity(id);
     expect(e.title).toBe("My title");
     expect(e.description).toBe("New details");
-    expect(e.aiScore).toBe(91);
+    expect(e.aiScore).toBe(9.1);
     expect(e.favorite && e.archived).toBe(true);
     expect(e.notes).toBe("Try this");
     expect(e.provenance).toHaveLength(2);
+  });
+  it("keeps an event reaction independent from the favorite flag", () => {
+    const event: EntityInput = {
+      type: "Event",
+      title: "One-off concert",
+      startAt: "2099-04-16T18:00:00Z",
+    };
+    ingest(event, "event-reaction");
+    const id = store.entities()[0].id;
+
+    store.setState(id, { reaction: "like", favorite: true });
+    expect(store.entity(id)).toMatchObject({
+      reaction: "like",
+      favorite: true,
+    });
+
+    store.setState(id, { reaction: "dislike" });
+    expect(store.entity(id)).toMatchObject({
+      reaction: "dislike",
+      favorite: true,
+    });
+    expect(store.entities()).toHaveLength(1);
+
+    ingest(
+      { ...event, description: "Updated provider description" },
+      "event-reaction",
+    );
+    expect(store.entity(id)).toMatchObject({
+      reaction: "dislike",
+      favorite: true,
+      description: "Updated provider description",
+    });
+
+    expect(() => {
+      ingest(place, "place-reaction");
+      const placeId = store
+        .entities()
+        .find((entity) => entity.type === "Place")!.id;
+      store.setState(placeId, { reaction: "like" });
+    }).toThrow("Оценивать можно только мероприятия");
   });
   it("deduplicates across sources and links both", () => {
     ingest(place);
@@ -675,6 +718,22 @@ describe("canonical ingestion", () => {
     ingest({ type: "Community", title: "B" }, "b");
     expect(store.entities()).toHaveLength(2);
   });
+  it("keeps an event reaction when manually merging cards", () => {
+    ingest({ type: "Event", title: "Keep" }, "event-keep");
+    ingest({ type: "Event", title: "Remove" }, "event-remove");
+    const keep = store.entities().find((entity) => entity.title === "Keep")!;
+    const remove = store
+      .entities()
+      .find((entity) => entity.title === "Remove")!;
+    store.setState(remove.id, { reaction: "dislike", favorite: true });
+
+    store.merge(keep.id, remove.id);
+
+    expect(store.entity(keep.id)).toMatchObject({
+      reaction: "dislike",
+      favorite: true,
+    });
+  });
   it("separates demo from real and does not reseed after removal", () => {
     seedDemo(store);
     expect(store.entities()).toHaveLength(3);
@@ -717,6 +776,8 @@ describe("canonical ingestion", () => {
     expect(store.source("source-overpass").enabled).toBe(false);
   });
   it("merges existing Tickets.rs series in migration 009", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-01T12:00:00Z"));
     const event = (
       startAt: string,
       url: string,

@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import type { Candidate, Scope, SourceView, SyncRun } from "../shared/model";
 import { Button, External, Empty, Stats, Busy } from "./components";
+import { AutoArchiveSetting } from "./AutoArchiveSetting";
 const statusLabels: Record<string, string> = {
   disabled: "Выключен",
   not_configured: "Нужен ключ",
@@ -96,6 +97,7 @@ export function Sources({
           <span className="count">{listed.length}</span>
         </div>
       </div>
+      <AutoArchiveSetting />
       <div className="type-tabs">
         <button
           className={tab === "connections" ? "selected" : ""}

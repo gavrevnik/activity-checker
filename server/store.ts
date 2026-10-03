@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import { normalizePersonalStatePatch } from "../shared/personal-state.js";
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -10,6 +11,7 @@ import {
   sourceSchema,
   userProfileSchema,
   type Entity,
+  type EntityReaction,
   type EntityDetail,
   type EntityInput,
   type FilteringRules,
@@ -24,7 +26,11 @@ import {
   type UserProfile,
   type UserProfileInput,
 } from "../shared/model.js";
-import { isPastEvent, localDay } from "../shared/dates.js";
+import { isPastEvent, localDay, zone } from "../shared/dates.js";
+import {
+  buildEntityPresentation,
+  presentationVersion,
+} from "./entity-presentation.js";
 import {
   canonicalUrl,
   digest,
@@ -94,6 +100,7 @@ export class Store {
     this.upgradeFilteringRules();
     this.collapseEventDuplicates();
     this.reapplyFilterRules();
+    this.refreshEntityPresentations();
     this.db
       .prepare(
         "UPDATE sync_runs SET status='error',finishedAt=?,errors=errors+1,error='Сервер был остановлен во время синхронизации' WHERE status='running'",
@@ -535,12 +542,49 @@ export class Store {
       );
     }
   }
-  rowEntity(row: Row): Entity {
+  private presentationTimeZone(
+    entity: NormalizedEntity,
+    scopes = this.scopes(),
+  ) {
+    return (
+      (
+        scopes.find(
+          (scope) =>
+            scope.country === entity.country && scope.city === entity.city,
+        ) || scopes.find((scope) => scope.country === entity.country)
+      )?.timezone || zone
+    );
+  }
+  refreshEntityPresentations() {
+    const rows = this.db.prepare("SELECT * FROM entities").all() as Row[];
+    const scopes = this.scopes();
+    this.transaction(() => {
+      for (const row of rows) this.rowEntity(row, scopes);
+    });
+  }
+  rowEntity(row: Row, scopes = this.scopes()): Entity {
+    const data = entitySchema.parse(JSON.parse(row.data));
+    const timeZone = this.presentationTimeZone(data, scopes);
+    let presentation = JSON.parse(row.presentation || "{}");
+    if (
+      presentation.version !== presentationVersion ||
+      presentation.timeZone !== timeZone
+    ) {
+      presentation = buildEntityPresentation(data, timeZone);
+      this.db
+        .prepare("UPDATE entities SET presentation=? WHERE id=?")
+        .run(JSON.stringify(presentation), row.id);
+    }
     return {
-      ...entitySchema.parse(JSON.parse(row.data)),
+      ...data,
+      presentation,
       id: row.id,
       archived: !!row.archived,
       favorite: !!row.favorite,
+      reaction: row.reaction || "",
+      dislikeReason: row.dislikeReason || "",
+      skipped: !!row.skipped,
+      skipReason: row.skipReason || "",
       notes: row.notes,
       filtered: !!row.filtered,
       filterReasons: JSON.parse(row.filterReason || "[]"),
@@ -566,7 +610,8 @@ export class Store {
         "SELECT firstId,secondId FROM duplicate_pairs WHERE status='new'",
       )
       .all() as Row[];
-    const byId = new Map(rows.map((r) => [r.id, this.rowEntity(r)]));
+    const scopes = this.scopes();
+    const byId = new Map(rows.map((r) => [r.id, this.rowEntity(r, scopes)]));
     for (const l of links)
       byId
         .get(l.entityId)
@@ -579,9 +624,26 @@ export class Store {
     }
     return [...byId.values()];
   }
+  entitySummary(id: string): Entity {
+    const row = this.db.prepare("SELECT * FROM entities WHERE id=?").get(id);
+    if (!row) throw new Error("Активность не найдена");
+    const entity = this.rowEntity(row);
+    entity.sources = this.db
+      .prepare(
+        "SELECT DISTINCT s.id,s.name,s.providerId FROM entity_source_links l JOIN source_items i ON i.id=l.sourceItemId JOIN sources s ON s.id=i.sourceId WHERE l.entityId=?",
+      )
+      .all(id) as Entity["sources"];
+    entity.duplicateCount = Number(
+      this.db
+        .prepare(
+          "SELECT count(*) AS count FROM duplicate_pairs WHERE (firstId=? OR secondId=?) AND status='new'",
+        )
+        .get(id, id)!.count,
+    );
+    return entity;
+  }
   entity(id: string): EntityDetail {
-    const e = this.entities({ includeFiltered: true }).find((e) => e.id === id);
-    if (!e) throw new Error("Активность не найдена");
+    const e = this.entitySummary(id);
     const provenance = (
       this.db
         .prepare(
@@ -747,7 +809,7 @@ export class Store {
   writeEntity(id: string, data: NormalizedEntity) {
     this.db
       .prepare(
-        "UPDATE entities SET type=?,title=?,country=?,city=?,startAt=?,data=?,updatedAt=? WHERE id=?",
+        "UPDATE entities SET type=?,title=?,country=?,city=?,startAt=?,data=?,presentation=?,updatedAt=? WHERE id=?",
       )
       .run(
         data.type,
@@ -756,6 +818,9 @@ export class Store {
         data.city,
         data.startAt,
         JSON.stringify(data),
+        JSON.stringify(
+          buildEntityPresentation(data, this.presentationTimeZone(data)),
+        ),
         now(),
         id,
       );
@@ -1015,7 +1080,7 @@ export class Store {
             id = randomUUID();
             this.db
               .prepare(
-                "INSERT INTO entities (id,type,title,country,city,startAt,data,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO entities (id,type,title,country,city,startAt,data,presentation,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?)",
               )
               .run(
                 id,
@@ -1025,6 +1090,12 @@ export class Store {
                 data.city,
                 data.startAt,
                 JSON.stringify(data),
+                JSON.stringify(
+                  buildEntityPresentation(
+                    data,
+                    this.presentationTimeZone(data),
+                  ),
+                ),
                 now(),
                 now(),
               );
@@ -1243,14 +1314,51 @@ export class Store {
   }
   setState(
     id: string,
-    state: { archived?: boolean; favorite?: boolean; notes?: string },
+    state: {
+      archived?: boolean;
+      favorite?: boolean;
+      reaction?: EntityReaction;
+      dislikeReason?: string;
+      skipped?: boolean;
+      skipReason?: string;
+      notes?: string;
+    },
   ) {
-    this.entity(id);
-    for (const [k, v] of Object.entries(state))
+    state = normalizePersonalStatePatch(state);
+    const row = this.db.prepare("SELECT type FROM entities WHERE id=?").get(id);
+    if (!row) throw new Error("Активность не найдена");
+    if (
+      (state.reaction !== undefined ||
+        state.dislikeReason !== undefined ||
+        state.skipped !== undefined ||
+        state.skipReason !== undefined) &&
+      row.type !== "Event"
+    )
+      throw new Error("Оценивать можно только мероприятия");
+    const fields = (
+      [
+        "archived",
+        "favorite",
+        "reaction",
+        "notes",
+        "dislikeReason",
+        "skipped",
+        "skipReason",
+      ] as const
+    ).filter((key) => state[key] !== undefined);
+    if (fields.length)
       this.db
-        .prepare(`UPDATE entities SET ${k}=?,updatedAt=? WHERE id=?`)
-        .run(typeof v === "boolean" ? Number(v) : v, now(), id);
-    return this.entity(id);
+        .prepare(
+          `UPDATE entities SET ${fields.map((key) => `${key}=?`).join(",")},updatedAt=? WHERE id=?`,
+        )
+        .run(
+          ...fields.map((key) =>
+            typeof state[key] === "boolean" ? Number(state[key]) : state[key]!,
+          ),
+          now(),
+          id,
+        );
+    return this.entitySummary(id);
   }
   candidates(): Candidate[] {
     return this.db
@@ -1312,10 +1420,20 @@ export class Store {
     }
     this.writeEntity(keepId, merged);
     this.db
-      .prepare("UPDATE entities SET favorite=?,notes=?,overrides=? WHERE id=?")
+      .prepare(
+        "UPDATE entities SET favorite=?,reaction=?,notes=?,dislikeReason=?,skipped=?,skipReason=?,overrides=? WHERE id=?",
+      )
       .run(
         keepRow.favorite || removeRow.favorite ? 1 : 0,
+        keepRow.reaction || removeRow.reaction || "",
         [keepRow.notes, removeRow.notes].filter(Boolean).join("\n"),
+        // Keep the reason belonging to the surviving reaction, not a conflicting duplicate.
+        (keepRow.reaction ? keepRow.dislikeReason : removeRow.dislikeReason) ||
+          "",
+        keepRow.reaction || removeRow.reaction
+          ? 0
+          : Number(!!(keepRow.skipped || removeRow.skipped)),
+        (keepRow.skipped ? keepRow.skipReason : removeRow.skipReason) || "",
         JSON.stringify({
           ...JSON.parse(removeRow.overrides),
           ...JSON.parse(keepRow.overrides),

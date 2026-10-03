@@ -1,7 +1,18 @@
 export const zone = "Europe/Belgrade";
+const formatters = new Map<string, Intl.DateTimeFormat>();
+function dateFormatter(locale: string, options: Intl.DateTimeFormatOptions) {
+  const key = JSON.stringify([locale, options]);
+  let formatter = formatters.get(key);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(locale, options);
+    if (formatters.size >= 64) formatters.clear();
+    formatters.set(key, formatter);
+  }
+  return formatter;
+}
 export function localDay(value: Date | string = new Date(), timeZone = zone) {
   const d = new Date(value);
-  return new Intl.DateTimeFormat("en-CA", {
+  return dateFormatter("en-CA", {
     timeZone,
     year: "numeric",
     month: "2-digit",
@@ -13,7 +24,7 @@ export function displayDate(
   options?: Intl.DateTimeFormatOptions,
 ) {
   if (!value) return "Дата уточняется";
-  return new Intl.DateTimeFormat("ru-RU", {
+  return dateFormatter("ru-RU", {
     timeZone: zone,
     day: "numeric",
     month: "short",
@@ -27,7 +38,7 @@ export function eventDateLabel(value: string, timeZone = zone) {
   const date = new Date(dateOnly ? value + "T12:00:00Z" : value);
   if (Number.isNaN(date.valueOf())) return "";
   const day = dateOnly ? value : localDay(date, timeZone);
-  const rawWeekday = new Intl.DateTimeFormat("ru-RU", {
+  const rawWeekday = dateFormatter("ru-RU", {
     timeZone: dateOnly ? "UTC" : timeZone,
     weekday: "short",
   })
@@ -37,13 +48,24 @@ export function eventDateLabel(value: string, timeZone = zone) {
     rawWeekday.charAt(0).toLocaleUpperCase("ru-RU") + rawWeekday.slice(1);
   const time = dateOnly
     ? ""
-    : new Intl.DateTimeFormat("en-GB", {
+    : dateFormatter("en-GB", {
         timeZone,
         hour: "2-digit",
         minute: "2-digit",
         hourCycle: "h23",
       }).format(date);
   return [day, weekday, time].filter(Boolean).join(" · ");
+}
+
+export function eventDateRangeLabel(
+  startAt: string,
+  endAt = "",
+  timeZone = zone,
+) {
+  const start = eventDateLabel(startAt, timeZone);
+  if (!start) return "";
+  const end = eventDateLabel(endAt, timeZone);
+  return end && end !== start ? `${start} - ${end}` : start;
 }
 
 export function inPeriod(
@@ -55,6 +77,12 @@ export function inPeriod(
 ) {
   if (!start) return false;
   const day = start.length === 10 ? start : localDay(start);
+  if (period === "custom") return (!from || day >= from) && (!to || day <= to);
+  const range = periodDateRange(period, today);
+  return (!range.from || day >= range.from) && (!range.to || day <= range.to);
+}
+
+export function periodDateRange(period: string, today = localDay()) {
   const date = new Date(today + "T12:00:00Z");
   const weekday = (date.getUTCDay() + 6) % 7;
   const add = (n: number) => {
@@ -62,13 +90,12 @@ export function inPeriod(
     d.setUTCDate(d.getUTCDate() + n);
     return d.toISOString().slice(0, 10);
   };
-  if (period === "today") return day === today;
-  if (period === "week") return day >= today && day <= add(6 - weekday);
-  if (period === "two-weeks") return day >= today && day <= add(13 - weekday);
+  if (period === "today") return { from: today, to: today };
+  if (period === "week") return { from: today, to: add(6 - weekday) };
+  if (period === "two-weeks") return { from: today, to: add(13 - weekday) };
   if (period === "weekend")
-    return day >= add(5 - weekday) && day <= add(6 - weekday);
-  if (period === "custom") return (!from || day >= from) && (!to || day <= to);
-  return true;
+    return { from: add(5 - weekday), to: add(6 - weekday) };
+  return { from: "", to: "" };
 }
 
 export function inDateRange(
@@ -104,7 +131,7 @@ export function isPastEvent(
 export function localDateTime(value: string, timeZone = zone): string {
   if (!value || value.length === 10) return value;
   const parts = Object.fromEntries(
-    new Intl.DateTimeFormat("en-CA", {
+    dateFormatter("en-CA", {
       timeZone,
       year: "numeric",
       month: "2-digit",

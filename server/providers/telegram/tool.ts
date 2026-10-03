@@ -2,15 +2,19 @@ import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { DatabaseSync } from "node:sqlite";
 import { parse } from "dotenv";
 import { z } from "zod";
 import { readSecrets } from "../../secrets.js";
+import { readTelegramMonitoringSettings } from "../../telegram-monitoring-settings.js";
+import { telegramUsername } from "../../../shared/telegram-monitoring.js";
 import { telegramEntity, telegramRawItem } from "./provider.js";
 import {
   executeTelegramBatch,
+  monitorTelegramChannels,
   normalizeTelegramQueries,
   sampleTelegramChannels,
-  telegramOperations,
+  telegramDiscoveryOperations,
   telegramStatus,
 } from "./client.js";
 
@@ -19,7 +23,7 @@ const root = fileURLToPath(new URL("../../../", import.meta.url));
 export const telegramToolInputSchema = z
   .object({
     queries: z.array(z.string().trim().min(1).max(200)).max(30).default([]),
-    operations: z.array(z.enum(telegramOperations)).min(1).max(4),
+    operations: z.array(z.enum(telegramDiscoveryOperations)).min(1).max(2),
     seedChannels: z
       .array(z.string().trim().min(1).max(200))
       .max(20)
@@ -27,14 +31,12 @@ export const telegramToolInputSchema = z
     resultsPerQuery: z.number().int().min(1).max(50).default(10),
     maxItems: z.number().int().min(1).max(500).default(100),
     minParticipants: z.number().int().min(0).max(10_000_000).default(0),
-    minDate: z.iso.date().optional(),
-    maxDate: z.iso.date().optional(),
     store: z.boolean().default(false),
     sourceId: z.string().min(1).max(200).default("source-telegram"),
   })
   .strict();
 
-function requiredSecrets() {
+export function requiredSecrets() {
   const secrets = readSecrets();
   if (!secrets.TELEGRAM_API_ID || !secrets.TELEGRAM_API_HASH)
     throw new Error(
@@ -43,7 +45,7 @@ function requiredSecrets() {
   return secrets;
 }
 
-function databasePath() {
+export function databasePath() {
   let file: Record<string, string> = {};
   try {
     file = parse(readFileSync(resolve(root, ".env.local")));
@@ -88,6 +90,233 @@ export async function sampleTelegramChannelPosts(input: {
   });
 }
 
+export interface TelegramMonitoringChannel {
+  communityId: string;
+  title: string;
+  username: string;
+  url: string;
+  memberCount: number | null;
+  tags: string[];
+  archived: boolean;
+  filtered: boolean;
+}
+
+function usernameFromCommunity(data: Record<string, unknown>) {
+  const knownIds =
+    data.knownIds && typeof data.knownIds === "object"
+      ? (data.knownIds as Record<string, unknown>)
+      : {};
+  const known = knownIds.telegram_username;
+  if (typeof known === "string" && known.trim())
+    return normalizedHistorySeed(known);
+  const url = typeof data.url === "string" ? data.url : "";
+  const username = normalizedHistorySeed(url);
+  return username !== url ? username : "";
+}
+
+export function getTelegramMonitoringChannels(
+  input: {
+    includeArchived?: boolean;
+    includeFiltered?: boolean;
+    includeExcluded?: boolean;
+    limit?: number;
+  } = {},
+): TelegramMonitoringChannel[] {
+  const database = new DatabaseSync(databasePath(), { readOnly: true });
+  try {
+    return listTelegramMonitoringChannels(database, input);
+  } finally {
+    database.close();
+  }
+}
+
+export function listTelegramMonitoringChannels(
+  database: DatabaseSync,
+  input: {
+    includeArchived?: boolean;
+    includeFiltered?: boolean;
+    includeExcluded?: boolean;
+    limit?: number;
+  } = {},
+): TelegramMonitoringChannel[] {
+  const settings = readTelegramMonitoringSettings(database);
+  const conditions = ["type='Community'"];
+  if (!input.includeArchived) conditions.push("archived=0");
+  if (!input.includeFiltered) conditions.push("filtered=0");
+  const rows = database
+    .prepare(
+      `SELECT id,data,overrides,archived,filtered FROM entities WHERE ${conditions.join(" AND ")} ORDER BY updatedAt DESC,id LIMIT ?`,
+    )
+    .all(Math.max(1, Math.min(input.limit || 200, 1000))) as Array<{
+    id: string;
+    data: string;
+    overrides: string;
+    archived: number;
+    filtered: number;
+  }>;
+  return rows.flatMap((row) => {
+    const data = {
+      ...JSON.parse(row.data),
+      ...JSON.parse(row.overrides),
+    } as Record<string, unknown>;
+    const username = usernameFromCommunity(data);
+    if (!username) return [];
+    if (
+      !input.includeExcluded &&
+      settings.excludedChannels.includes(telegramUsername(username))
+    )
+      return [];
+    const tags = Array.isArray(data.tags) ? data.tags : [];
+    const knownIds =
+      data.knownIds && typeof data.knownIds === "object"
+        ? (data.knownIds as Record<string, unknown>)
+        : {};
+    const telegram =
+      typeof knownIds.telegram === "string" ||
+      typeof knownIds.telegram_channel === "string" ||
+      typeof knownIds.telegram_username === "string" ||
+      tags.includes("telegram") ||
+      (typeof data.url === "string" &&
+        /^https?:\/\/(?:www\.)?t\.me\//i.test(data.url));
+    if (!telegram) return [];
+    return [
+      {
+        communityId: row.id,
+        title: String(data.title || `@${username}`),
+        username,
+        url: `https://t.me/${username}`,
+        memberCount:
+          typeof data.memberCount === "number" ? data.memberCount : null,
+        tags: tags.filter((tag): tag is string => typeof tag === "string"),
+        archived: Boolean(row.archived),
+        filtered: Boolean(row.filtered),
+      },
+    ];
+  });
+}
+
+export async function monitorTelegramChannelPosts(input: {
+  channels?: string[];
+  communityIds?: string[];
+  allStoredChannels?: boolean;
+  startDate?: string;
+  endDate?: string;
+  timeZone?: string;
+  maxPostsPerChannel?: number;
+  maxScannedPerChannel?: number;
+  pageSize?: number;
+  afterMessageIds?: Record<string, string>;
+  beforeMessageIds?: Record<string, string>;
+  minViews?: number;
+  minTextLength?: number;
+  excludeForwards?: boolean;
+  excludeReplies?: boolean;
+  excludeMediaOnly?: boolean;
+  excludeAdDisclosures?: boolean;
+  excludeKeywords?: string[];
+  excludeHashtags?: string[];
+  excludeLinkDomains?: string[];
+  excludeMediaTypes?: string[];
+  delaySeconds?: number;
+}) {
+  const stored =
+    input.communityIds?.length || input.allStoredChannels
+      ? getTelegramMonitoringChannels({ limit: 1000, includeExcluded: true })
+      : [];
+  const byId = new Map(stored.map((channel) => [channel.communityId, channel]));
+  const missingIds = (input.communityIds || []).filter((id) => !byId.has(id));
+  if (missingIds.length)
+    throw new Error(
+      `Telegram communities не найдены или скрыты: ${missingIds.join(", ")}`,
+    );
+  const selected = [
+    ...(input.channels || []),
+    ...(input.communityIds || []).flatMap((id) => {
+      const channel = byId.get(id);
+      return channel ? [channel.username] : [];
+    }),
+    ...(input.allStoredChannels
+      ? stored.map((channel) => channel.username)
+      : []),
+  ];
+  const database = new DatabaseSync(databasePath(), { readOnly: true });
+  let settings;
+  try {
+    settings = readTelegramMonitoringSettings(database);
+  } finally {
+    database.close();
+  }
+  const requested = [
+    ...new Map(
+      selected
+        .map(normalizedHistorySeed)
+        .filter(Boolean)
+        .map((username) => [username.toLowerCase(), username]),
+    ).values(),
+  ];
+  if (!requested.length)
+    throw new Error(
+      "Укажите channels/communityIds или allStoredChannels=true.",
+    );
+  const skipped = requested.filter((username) =>
+    settings.excludedChannels.includes(telegramUsername(username)),
+  );
+  const channels = requested.filter(
+    (username) =>
+      !settings.excludedChannels.includes(telegramUsername(username)),
+  );
+  const warnings = skipped.length
+    ? [
+        `Исключены настройками, без запросов к Telegram: ${skipped.map((username) => `@${username}`).join(", ")}`,
+      ]
+    : [];
+  if (!channels.length)
+    return {
+      ok: true as const,
+      requestCount: 0,
+      range: {
+        startDate: input.startDate || null,
+        endDate: input.endDate || null,
+        timeZone: input.timeZone || "Europe/Belgrade",
+      },
+      channels: [],
+      warnings,
+      billing: {
+        perResultUsd: 0,
+        paidStarsAllowed: false,
+        note: "Все каналы исключены; запросов к Telegram не было.",
+      },
+    };
+  if (channels.length > 20)
+    throw new Error(
+      `За один monitoring batch допустимо до 20 каналов; выбрано ${channels.length}. Разбейте список на batch.`,
+    );
+  const secrets = requiredSecrets();
+  const {
+    communityIds: _ids,
+    allStoredChannels: _all,
+    ...monitoringInput
+  } = input;
+  const result = await monitorTelegramChannels({
+    ...monitoringInput,
+    excludeKeywords: [
+      ...new Set([
+        ...settings.excludeKeywords,
+        ...(input.excludeKeywords || []),
+      ]),
+    ],
+    excludeReplies: settings.excludeReplies || Boolean(input.excludeReplies),
+    excludeAdDisclosures:
+      settings.excludeAdDisclosures || Boolean(input.excludeAdDisclosures),
+    channels,
+    apiId: secrets.TELEGRAM_API_ID!,
+    apiHash: secrets.TELEGRAM_API_HASH!,
+    pythonPath: secrets.TELEGRAM_PYTHON,
+    sessionPath: secrets.TELEGRAM_SESSION_PATH,
+  });
+  return { ...result, warnings: [...warnings, ...result.warnings] };
+}
+
 export async function executeTelegramTool(
   input: z.input<typeof telegramToolInputSchema>,
 ) {
@@ -100,8 +329,6 @@ export async function executeTelegramTool(
     resultsPerQuery: args.resultsPerQuery,
     maxItems: args.maxItems,
     minParticipants: args.minParticipants,
-    minDate: args.minDate,
-    maxDate: args.maxDate,
     delaySeconds: 2.5,
     apiId: secrets.TELEGRAM_API_ID!,
     apiHash: secrets.TELEGRAM_API_HASH!,

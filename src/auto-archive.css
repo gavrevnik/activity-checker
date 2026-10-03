@@ -1,0 +1,19 @@
+.auto-archive-setting {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 0 0 20px;
+  font-size: 13px;
+}
+.auto-archive-setting label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.auto-archive-setting small {
+  color: var(--muted);
+}
+.auto-archive-setting [role="alert"] {
+  color: #a33b36;
+}

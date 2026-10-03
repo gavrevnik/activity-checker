@@ -8,22 +8,22 @@ import {
   getTelegramQueryHistory,
   getTelegramToolStatus,
   markTelegramQueryHistory,
-  sampleTelegramChannelPosts,
 } from "../server/providers/telegram/tool.js";
 import { safeError } from "../server/secrets.js";
+import { registerTelegramResearchTools } from "./telegram-research-tools.js";
 
 process.chdir(fileURLToPath(new URL("../", import.meta.url)));
 
 const server = new McpServer({
-  name: "activity-checker-telegram",
+  name: "activity-checker-telegram-discovery",
   version: "0.1.0",
 });
 
 const common = {
   queries: z
     .array(z.string().trim().min(1).max(200))
-    .min(1)
     .max(30)
+    .default([])
     .describe("Search hypotheses; batch up to 30 in one authorized session."),
   resultsPerQuery: z.number().int().min(1).max(50).default(10),
   maxItems: z.number().int().min(1).max(500).default(100),
@@ -36,14 +36,6 @@ const common = {
     .describe(
       "Skip channels with a known smaller audience; unknown counts pass through.",
     ),
-  minDate: z.iso
-    .date()
-    .optional()
-    .describe("Post publication date lower bound."),
-  maxDate: z.iso
-    .date()
-    .optional()
-    .describe("Post publication date upper bound."),
   store: z
     .boolean()
     .default(false)
@@ -84,20 +76,15 @@ server.registerTool(
   "telegram_discovery_batch",
   {
     description:
-      "Run up to 30 keyword hypotheses across selected Telegram public discovery methods in one session. No per-result fee; automatic Stars payments are disabled. Use store=true only when the user asks to enrich Activity Checker.",
+      "Discover public Telegram channels by title/username and recommendations. Then filter existing candidates, read description/size, pins and recent posts, optionally scoped text search. Global post search stays disabled. Use store=true only for user-approved enrichment.",
     inputSchema: {
       ...common,
       operations: z
         .array(
-          z.enum([
-            "searchPublicChats",
-            "channels.searchPosts",
-            "messages.searchGlobal",
-            "channels.getChannelRecommendations",
-          ]),
+          z.enum(["searchPublicChats", "channels.getChannelRecommendations"]),
         )
         .min(1)
-        .max(4),
+        .max(2),
       seedChannels: z
         .array(z.string().trim().min(1).max(200))
         .max(20)
@@ -118,13 +105,16 @@ server.registerTool(
 
 function registerKeywordTool(
   name: string,
-  operation:
-    "searchPublicChats" | "channels.searchPosts" | "messages.searchGlobal",
+  operation: "searchPublicChats",
   description: string,
 ) {
+  const keywordInput = {
+    ...common,
+    queries: z.array(z.string().trim().min(1).max(200)).min(1).max(30),
+  };
   server.registerTool(
     name,
-    { description, inputSchema: common },
+    { description, inputSchema: keywordInput },
     async (args) => {
       try {
         return response(
@@ -148,16 +138,9 @@ registerKeywordTool(
   "searchPublicChats",
   "Find public Telegram channels and supergroups by title/username using contacts.search. Best first discovery step.",
 );
-registerKeywordTool(
-  "telegram_search_posts",
-  "channels.searchPosts",
-  "Search posts in public channels, including channels the account has not joined. Telegram may require Premium or exhaust free full-text slots; this tool never pays Stars.",
-);
-registerKeywordTool(
-  "telegram_search_global",
-  "messages.searchGlobal",
-  "Search messages globally, returning only posts from public username-addressable channels/groups; private chats and users are excluded.",
-);
+
+// Intentionally not registered: channels.searchPosts and messages.searchGlobal.
+// Only channel-scoped research is allowed; global/paid post search stays disabled.
 
 server.registerTool(
   "telegram_channel_recommendations",
@@ -186,25 +169,6 @@ server.registerTool(
           }),
         ),
       );
-    } catch (error) {
-      return failure(error);
-    }
-  },
-);
-
-server.registerTool(
-  "telegram_sample_channel_posts",
-  {
-    description:
-      "Read a small sample of recent public posts from selected channels to verify language and topical relevance before storing them.",
-    inputSchema: {
-      channels: z.array(z.string().trim().min(1).max(200)).min(1).max(20),
-      messagesPerChannel: z.number().int().min(1).max(10).default(3),
-    },
-  },
-  async (args) => {
-    try {
-      return response(await sampleTelegramChannelPosts(args));
     } catch (error) {
       return failure(error);
     }
@@ -250,4 +214,5 @@ server.registerTool(
   },
 );
 
+registerTelegramResearchTools(server, true);
 await server.connect(new StdioServerTransport());

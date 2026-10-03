@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   X,
   ArrowUpRight,
@@ -6,6 +6,7 @@ import {
   CalendarDays,
   MapPin,
   Users,
+  ChevronDown,
 } from "lucide-react";
 import type { EntityType, SyncResult } from "../shared/model";
 export const icons = {
@@ -130,6 +131,106 @@ export function Field({
 }
 export function Empty({ children }: { children: ReactNode }) {
   return <div className="empty">{children}</div>;
+}
+export interface CheckboxMultiSelectOption {
+  value: string;
+  label: string;
+  count?: number;
+}
+export function CheckboxMultiSelect({
+  label,
+  allLabel,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  allLabel: string;
+  options: CheckboxMultiSelectOption[];
+  value: string[] | null;
+  onChange: (value: string[] | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: PointerEvent) => {
+      if (!root.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [open]);
+  const selected = new Set(value ?? options.map((option) => option.value));
+  const summary =
+    value === null
+      ? allLabel
+      : value.length === 0
+        ? "Ничего не выбрано"
+        : value.length === 1
+          ? options.find((option) => option.value === value[0])?.label ||
+            "1 выбрано"
+          : `${value.length} выбрано`;
+  const toggle = (optionValue: string) => {
+    const next = new Set(selected);
+    if (next.has(optionValue)) next.delete(optionValue);
+    else next.add(optionValue);
+    const nextValues = options
+      .map((option) => option.value)
+      .filter((candidate) => next.has(candidate));
+    onChange(nextValues.length === options.length ? null : nextValues);
+  };
+  return (
+    <div className={`checkbox-multiselect ${open ? "is-open" : ""}`} ref={root}>
+      <button
+        type="button"
+        className="checkbox-multiselect-trigger"
+        aria-label={`${label}: ${summary}`}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        onClick={() => setOpen(!open)}
+      >
+        <span>{label}</span>
+        <strong>{summary}</strong>
+        <ChevronDown size={14} />
+      </button>
+      {open && (
+        <div
+          className="checkbox-multiselect-menu"
+          role="listbox"
+          aria-multiselectable="true"
+        >
+          <label className="checkbox-multiselect-all">
+            <input
+              type="checkbox"
+              checked={value === null}
+              onChange={() => onChange(value === null ? [] : null)}
+            />
+            <span>Выбрать все</span>
+          </label>
+          <div className="checkbox-multiselect-options">
+            {options.map((option) => (
+              <label key={option.value}>
+                <input
+                  type="checkbox"
+                  checked={selected.has(option.value)}
+                  onChange={() => toggle(option.value)}
+                />
+                <span>{option.label}</span>
+                {option.count !== undefined && <small>{option.count}</small>}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 export function Busy() {
   return <Loader2 size={15} className="spin" aria-label="Выполняется" />;

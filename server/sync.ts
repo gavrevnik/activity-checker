@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { getProvider, providerInfo } from "./providers/registry.js";
 import { readSecrets, safeError } from "./secrets.js";
 import { googlePlacesQuotaStatus } from "./providers/google-places/quota.js";
+import { autoArchivePastEvents } from "./auto-archive.js";
 import {
   syncOptionsSchema,
   type SourceView,
@@ -129,6 +130,10 @@ export class SyncService {
           .run(new Date().toISOString(), id);
         return { message };
       }
+      const isAggregator = provider.group === "API Агрегаторы";
+      let archived = isAggregator
+        ? autoArchivePastEvents(this.store, source.scopeId).archived
+        : 0;
       const fetched = await provider.sync(ctx, options);
       const warnings = [...(fetched.warnings || [])];
       const records = [];
@@ -145,6 +150,11 @@ export class SyncService {
       }
       // Entire validated batch commits atomically, including provenance and candidates.
       const result = this.store.ingest(source, records);
+      // A provider can return old records again; keep those out of the active feed too.
+      if (isAggregator)
+        archived += autoArchivePastEvents(this.store, source.scopeId).archived;
+      if (archived)
+        warnings.push(`Автоархив: ${archived} прошедших мероприятий.`);
       result.fetched = fetched.items.length;
       result.errors = errors;
       result.warnings = [...new Set([...result.warnings, ...warnings])].slice(

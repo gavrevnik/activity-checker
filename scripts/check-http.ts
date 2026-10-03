@@ -99,6 +99,48 @@ try {
   assert.equal((await req("/entities/" + id)).data.favorite, true);
   assert.equal((await req("/entities/" + id)).data.provenance.length, 1);
   assert.equal(
+    (await req("/entities/" + id, "PATCH", { reaction: "like" })).status,
+    400,
+  );
+  await req("/import", "POST", {
+    entities: [
+      {
+        type: "Event",
+        title: "HTTP reaction event",
+        startAt: "2099-05-01T18:00:00Z",
+      },
+    ],
+  });
+  const eventId = (await req("/bootstrap")).data.entities.find(
+    (entity: any) => entity.type === "Event",
+  ).id;
+  const reaction = await req("/entities/" + eventId, "PATCH", {
+    favorite: true,
+    reaction: "dislike",
+  });
+  assert.equal(reaction.status, 200);
+  assert.equal(reaction.data.favorite, true);
+  assert.equal(reaction.data.reaction, "dislike");
+  const feedback = await req("/entities/" + eventId, "PATCH", {
+    dislikeReason: "  Too late  ",
+  });
+  assert.equal(feedback.status, 200);
+  assert.equal(feedback.data.dislikeReason, "Too late");
+  assert.equal(feedback.data.reaction, "dislike");
+  assert.equal(feedback.data.favorite, true);
+  assert.equal(
+    (await req("/entities/" + eventId)).data.dislikeReason,
+    "Too late",
+  );
+  assert.equal(
+    (
+      await req("/entities/" + eventId, "PATCH", {
+        dislikeReason: "x".repeat(2001),
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
     (
       await req("/import", "POST", {
         entities: [{ type: "Wrong", title: "No" }],
@@ -106,7 +148,7 @@ try {
     ).status,
     400,
   );
-  assert.equal((await req("/bootstrap")).data.entities.length, 1);
+  assert.equal((await req("/bootstrap")).data.entities.length, 2);
   assert.equal(
     (await req("/sources/source-allevents/sync", "POST", {})).status,
     400,
@@ -116,7 +158,7 @@ try {
   assert.ok(schema.data.properties.entities);
   assert.ok(schema.data.properties.entities.items.properties.cuisine);
   const exported = await req("/export");
-  assert.equal(exported.data.entities.length, 1);
+  assert.equal(exported.data.entities.length, 2);
   assert.equal(
     (await req("/import/preview", "POST", exported.data)).status,
     200,
@@ -154,7 +196,7 @@ try {
   );
   assert.equal(invalidHost, 403);
   console.log(
-    "HTTP smoke: Life Hub navigation, profile, past-event archive, preview, import, dedup, provenance, edits, catalog, schema, export, validation, Host/Origin checks — OK.",
+    "HTTP smoke: Life Hub navigation, profile, past-event archive, preview, import, dedup, provenance, reactions, edits, catalog, schema, export, validation, Host/Origin checks — OK.",
   );
 } finally {
   await new Promise<void>((resolve) => server.close(() => resolve()));

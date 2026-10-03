@@ -1,0 +1,5 @@
+interface:
+  display_name: "AI MCP Discovery"
+  short_description: "Поиск релевантных событий с памятью ключевиков и квот"
+policy:
+  allow_implicit_invocation: true
