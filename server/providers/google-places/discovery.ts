@@ -1,3 +1,5 @@
+import { mcpCanRequest } from "./mcp-budget.js";
+import { knownGooglePlace } from "../../google-saved.js";
 import type { Store } from "../../store.js";
 import { searchGooglePlacesText, type GooglePlace } from "./client.js";
 import type { GooglePlacesSku } from "./quota.js";
@@ -12,6 +14,7 @@ export interface GooglePlacesBatchOptions {
   minRating: number;
   resultsPerQuery: number;
   maxItems: number;
+  newOnly?: boolean;
 }
 
 export function normalizeGooglePlacesQueries(values: string[]) {
@@ -75,7 +78,7 @@ export function rememberGooglePlaceIds(
       displayName: displayName || before?.displayName || "",
       proFetched: Boolean(before?.proFetchedAt),
       enterpriseFetched: Boolean(before?.enterpriseFetchedAt),
-      isNewCandidate: !entityId && !before?.proFetchedAt,
+      isNewCandidate: !knownGooglePlace(store, place),
     };
   });
 }
@@ -116,6 +119,7 @@ export async function executeGooglePlacesBatch(
     existingIds: number;
   }> = [];
   for (const query of queries) {
+    if (!mcpCanRequest()) break;
     const result = await searchGooglePlacesText(
       {
         query,
@@ -145,6 +149,7 @@ export async function executeGooglePlacesBatch(
       existingIds: statuses.filter((status) => status.knownInEntities).length,
     });
     for (const place of result.places) {
+      if (options.newOnly && knownGooglePlace(options.store, place)) continue;
       const existing = found.get(place.id);
       if (existing) existing.matchedQueries.push(query);
       else found.set(place.id, { place, matchedQueries: [query] });
@@ -174,6 +179,7 @@ export async function executeGooglePlacesDiscovery(
   const candidates = new Map<string, Set<string>>();
 
   for (const query of queries) {
+    if (!mcpCanRequest()) break;
     const result = await searchGooglePlacesText(
       {
         query,
@@ -220,7 +226,7 @@ export async function executeGooglePlacesDiscovery(
   const minimumValid = options.minValidResultsPerQuery || 1;
 
   for (const [query, candidateIds] of candidates) {
-    if (found.size >= options.maxItems) break;
+    if (found.size >= options.maxItems || !mcpCanRequest()) break;
     const result = await searchGooglePlacesText(
       {
         query,
@@ -242,7 +248,10 @@ export async function executeGooglePlacesDiscovery(
     const candidateMatches = result.places.filter((place) =>
       candidateIds.has(place.id),
     );
-    const valid = candidateMatches.filter(validProPlace);
+    const valid = candidateMatches.filter(
+      (place) =>
+        validProPlace(place) && !knownGooglePlace(options.store, place),
+    );
     const accepted = valid.length >= minimumValid;
     proPass.push({
       query,

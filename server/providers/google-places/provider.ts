@@ -135,7 +135,7 @@ export const googlePlacesApi = defineProvider(
     mode: "discovery",
     configFields: ["scope", "keyword", "minRating"],
     description:
-      "MCP · Официальный Text Search: бесплатный IDs-only discovery и выборочный Pro/Enterprise.",
+      "MCP · Официальный Text Search: Basic/IDs-only и Pro с MCP-лимитом 100 запросов в день.",
     credentials: [
       { key: "GOOGLE_PLACES_API_KEY", label: "Google Maps API key" },
     ],
@@ -161,17 +161,12 @@ export const googlePlacesApi = defineProvider(
       {
         name: "google_places_text_search_ids",
         description:
-          "Unlimited IDs-only Text Search для проверки гипотез и новых placeId.",
+          "Basic/IDs-only Text Search; учитывается в общей квоте MCP 100/день.",
       },
       {
         name: "google_places_text_search_pro",
         description:
           "Text Search Pro со стабильными полями карточки: имя, адрес, гео, типы и Google Maps URI.",
-      },
-      {
-        name: "google_places_text_search_enterprise",
-        description:
-          "Явный Enterprise-поиск с рейтингом и числом отзывов; не используется по умолчанию.",
       },
       {
         name: "google_places_store_llm_ratings",
@@ -191,8 +186,8 @@ export const googlePlacesApi = defineProvider(
     ],
     steps: [
       "Добавьте до 30 поисковых гипотез; минимальный рейтинг по умолчанию 4.0.",
-      "Сначала запускайте IDs-only и исключайте уже известные placeId.",
-      "Для продуктивных гипотез используйте Pro; Enterprise — только по явному запросу.",
+      "Сначала запускайте IDs-only и исключайте только существующие карточки ресторанов Activity Checker; Takeout отложен.",
+      "Перед каждым новым MCP-запуском прочитайте дневной остаток и уточните maxRequests; для продуктивных гипотез используйте Pro. Enterprise в MCP отключён.",
     ],
     limitations:
       "Локальный счётчик блокирует 5 001-й Pro и 1 001-й Enterprise-вызов за billing month. Он не видит запросы, сделанные вне Activity Checker; настройте Cloud quota как второй уровень защиты.",
@@ -246,7 +241,7 @@ export const googlePlacesApi = defineProvider(
     },
     async sync() {
       throw new Error(
-        "Google Places API (New) запускается через MCP; выполненный Pro/Enterprise-поиск сохраняет локальные Place-карточки автоматически.",
+        "Google Places API (New) запускается через MCP; выполненный Pro-поиск сохраняет локальные Place-карточки автоматически.",
       );
     },
     normalize(item) {

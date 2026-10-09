@@ -95,7 +95,6 @@ describe("providers", () => {
       "google_places_discovery_batch",
       "google_places_text_search_ids",
       "google_places_text_search_pro",
-      "google_places_text_search_enterprise",
       "google_places_store_llm_ratings",
     ]);
   });

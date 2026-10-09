@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { z } from "zod";
+import { isDeepStrictEqual } from "node:util";
 import type { Store } from "./store.js";
 import { localDay } from "../shared/dates.js";
 import {
@@ -19,6 +20,25 @@ const hydrate = (row: Row): AiDigest => ({
 });
 export class AiDigests {
   constructor(private store: Store) {}
+  remove(id: string, input: unknown) {
+    const { expectedDigest } = z
+      .object({
+        expectedDigest: aiDigestInputSchema.safeExtend({
+          createdAt: z.iso.datetime(),
+          archivedAt: z.iso.datetime().nullable(),
+        }),
+      })
+      .strict()
+      .parse(input);
+    return this.store.transaction(() => {
+      const current = this.get(id);
+      if (!current) return null;
+      if (!isDeepStrictEqual(current, expectedDigest))
+        throw new Error("Дайджест изменился; перечитайте его перед удалением");
+      this.store.db.prepare("DELETE FROM ai_digests WHERE id=?").run(id);
+      return { deleted: true as const, id };
+    });
+  }
   updateTags(id: string, input: unknown) {
     const patch = z
       .object({
@@ -137,6 +157,11 @@ export function registerAiDigestsApi(app: Express, store: Store) {
     res.json(digest);
   });
   app.post("/api/ai-digests", (req, res) => res.json(digests.create(req.body)));
+  app.delete("/api/ai-digests/:id", (req, res) => {
+    const result = digests.remove(req.params.id, req.body);
+    if (!result) return res.status(404).json({ error: "Дайджест не найден" });
+    res.json(result);
+  });
   app.patch("/api/ai-digests/:id/tags", (req, res) => {
     if (!digests.get(req.params.id))
       return res.status(404).json({ error: "Дайджест не найден" });

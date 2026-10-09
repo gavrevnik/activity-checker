@@ -1,3 +1,4 @@
+import { reserveMcpRequest } from "./mcp-budget.js";
 import { z } from "zod";
 import type { Store } from "../../store.js";
 import {
@@ -139,6 +140,7 @@ export async function searchGooglePlacesText(
 ) {
   const args = googlePlacesTextSearchSchema.parse(input);
   const sentQuery = textQuery(args.query, args.location);
+  reserveMcpRequest(args.mode);
   const reservation = reserveGooglePlacesRequest(
     store,
     args.mode,
@@ -148,6 +150,7 @@ export async function searchGooglePlacesText(
   try {
     const response = await fetch(endpoint, {
       method: "POST",
+      redirect: "error",
       headers: {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": args.apiKey,

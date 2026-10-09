@@ -1,7 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { normalizePersonalStatePatch } from "../shared/personal-state.js";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, readdirSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, lstatSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -87,6 +87,16 @@ const canCollapseEvents = (a: NormalizedEntity, b: NormalizedEntity) =>
 
 export class Store {
   db: DatabaseSync;
+  static openExisting(path: string): Store {
+    const store = Object.create(Store.prototype) as Store;
+    // MCP has no startup migrations, seeding, deduplication or archive side effects.
+    // Opening an absent DB must fail rather than create a new user database.
+    const info = lstatSync(path);
+    if (!info.isFile() || info.nlink !== 1) throw new Error("Expected existing regular SQLite database.");
+    store.db = new DatabaseSync(path);
+    store.db.exec("PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;");
+    return store;
+  }
   constructor(path = "../data/activity-checker/activity.sqlite", seed = true) {
     if (path !== ":memory:")
       mkdirSync(dirname(resolve(path)), { recursive: true });

@@ -14,6 +14,9 @@ underscore separators, no `#`/spaces; lowercased and deduplicated).
 Rows must overlap the requested period. Same ID/payload retries are idempotent;
 changed payloads never overwrite an existing snapshot. `GET /api/ai-digests/:id`
 returns the snapshot or 404. Historical digests start archived.
+`DELETE /api/ai-digests/:id {expectedDigest}` removes only that snapshot. Pass the
+complete latest GET response, including creation/archive timestamps; changed
+snapshots are rejected (400), missing IDs return 404. Source events are preserved.
 `PATCH /api/ai-digests/:id/tags {expectedItems, tags}` updates tags only: pass the
 current full items array and one tag array per item, in matching order. Stale
 items or mismatched counts are rejected (400), missing ID returns 404. Dates,

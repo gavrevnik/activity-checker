@@ -19,6 +19,7 @@ const commonSchema = {
   resultsPerQuery: z.number().int().min(1).max(20).default(10),
   maxItems: z.number().int().min(1).max(500).default(100),
   execute: z.boolean().default(false),
+  newOnly: z.boolean().default(false),
   sourceId: z.string().min(1).max(200).default("source-google-places-api"),
 };
 
@@ -139,7 +140,9 @@ export function persistGooglePlacesResults(
 }
 
 export function getGooglePlacesToolStatus() {
-  const store = new Store();
+  const store = Store.openExisting(
+    process.env.ACTIVITY_DB || "../data/activity-checker/activity.sqlite",
+  );
   try {
     const discovered = store.db
       .prepare("SELECT COUNT(*) AS count FROM google_places_discovered_ids")
@@ -172,7 +175,9 @@ export async function executeGooglePlacesTierTool(
     throw new Error(
       "Enterprise отключён по умолчанию. Для явного запуска передайте confirmEnterprise=true.",
     );
-  const store = new Store();
+  const store = Store.openExisting(
+    process.env.ACTIVITY_DB || "../data/activity-checker/activity.sqlite",
+  );
   try {
     const ctx = sourceContext(store, args.sourceId);
     const queries = normalizeGooglePlacesQueries(args.queries);
@@ -202,6 +207,7 @@ export async function executeGooglePlacesTierTool(
       minRating,
       resultsPerQuery: args.resultsPerQuery,
       maxItems: plan.maxItems,
+      newOnly: args.newOnly,
     });
     const stored =
       mode === "ids_only"
@@ -238,7 +244,9 @@ export async function executeGooglePlacesDiscoveryTool(
   input: z.input<typeof googlePlacesDiscoveryToolSchema>,
 ) {
   const args = googlePlacesDiscoveryToolSchema.parse(input);
-  const store = new Store();
+  const store = Store.openExisting(
+    process.env.ACTIVITY_DB || "../data/activity-checker/activity.sqlite",
+  );
   try {
     const ctx = sourceContext(store, args.sourceId);
     const queries = normalizeGooglePlacesQueries(args.queries);
@@ -271,6 +279,7 @@ export async function executeGooglePlacesDiscoveryTool(
       minRating,
       resultsPerQuery: args.resultsPerQuery,
       maxItems: plan.maxItems,
+      newOnly: args.newOnly,
       minValidResultsPerQuery: args.minValidResultsPerQuery,
     });
     const stored = persistGooglePlacesResults(
@@ -350,7 +359,9 @@ export function applyGooglePlacesLlmRatings(
 export function storeGooglePlacesLlmRatings(
   input: z.input<typeof googlePlacesLlmRatingsToolSchema>,
 ) {
-  const store = new Store();
+  const store = Store.openExisting(
+    process.env.ACTIVITY_DB || "../data/activity-checker/activity.sqlite",
+  );
   try {
     return applyGooglePlacesLlmRatings(store, input);
   } finally {

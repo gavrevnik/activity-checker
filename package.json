@@ -27,7 +27,8 @@
     "telegram:research": "node --import tsx scripts/telegram-research.ts",
     "foursquare:mcp": "node --import tsx scripts/foursquare-mcp.ts",
     "google-places:mcp": "node --import tsx scripts/google-places-mcp.ts",
-    "restaurants:import": "node --import tsx scripts/import-legacy-restaurants.ts"
+    "restaurants:import": "node --import tsx scripts/import-legacy-restaurants.ts",
+    "research:mcp": "node --import tsx scripts/activity-research-mcp.ts"
   },
   "dependencies": {
     "@fontsource-variable/golos-text": "^5.3.0",

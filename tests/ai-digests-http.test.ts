@@ -97,6 +97,25 @@ it("round-trips digest API, schema, retries, archive and validation on an isolat
         ).json()
       ).archivedDigests,
     ).toBe(0);
+    const remove = (id: string, body: unknown) =>
+      fetch(base + `/ai-digests/${id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    expect((await remove(input.id, {})).status).toBe(400);
+    expect(
+      (await remove(input.id, { expectedDigest: { ...first, title: "Stale" } }))
+        .status,
+    ).toBe(400);
+    expect((await fetch(base + `/ai-digests/${input.id}`)).status).toBe(200);
+    expect(
+      await (await remove(input.id, { expectedDigest: first })).json(),
+    ).toEqual({ deleted: true, id: input.id });
+    expect((await fetch(base + `/ai-digests/${input.id}`)).status).toBe(404);
+    expect((await remove(input.id, { expectedDigest: first })).status).toBe(404);
+    expect(await (await fetch(base + `/ai-digests/${archived.id}`)).json())
+      .toEqual(archived);
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     store.close();

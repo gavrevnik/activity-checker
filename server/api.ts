@@ -1,3 +1,4 @@
+import { registerGoogleSavedApi } from "./google-saved-api.js";
 import express from "express";
 import { z, ZodError } from "zod";
 import {
@@ -54,11 +55,13 @@ export function createApi(store: Store, port: number) {
     res.setHeader("Referrer-Policy", "no-referrer");
     next();
   });
+  app.use("/api/google-saved/import", express.json({ limit: "70mb" }));
   app.use(express.json({ limit: "5mb" }));
   app.use("/api", (_req, res, next) => {
     res.setHeader("Cache-Control", "no-store");
     next();
   });
+  registerGoogleSavedApi(app, store);
   registerAiEventsReviewApi(app, store);
   registerAiMcpDiscoveryApi(app, store);
   registerTelegramEventsApi(app, store);
@@ -82,11 +85,16 @@ export function createApi(store: Store, port: number) {
     res.json(store.entity(req.params.id)),
   );
   app.post("/api/entities/archive-past", (req, res) => {
-    const { scopeId } = z.object({ scopeId: z.string().min(1) }).strict().parse(req.body);
-    res.json(store.transaction(() => ({
-      ...store.archivePastEvents(scopeId),
-      archivedDigests: new AiDigests(store).archivePast(scopeId).archived,
-    })));
+    const { scopeId } = z
+      .object({ scopeId: z.string().min(1) })
+      .strict()
+      .parse(req.body);
+    res.json(
+      store.transaction(() => ({
+        ...store.archivePastEvents(scopeId),
+        archivedDigests: new AiDigests(store).archivePast(scopeId).archived,
+      })),
+    );
   });
   app.get("/api/auto-archive/settings", (_req, res) =>
     res.json(readAutoArchiveSettings(store)),

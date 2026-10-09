@@ -1,0 +1,15 @@
+.google-saved-lists {
+  margin: 18px 0 24px;
+  padding: 20px;
+  border: 1px solid var(--border, #dedede);
+  border-radius: 12px;
+  background: var(--surface, #fff);
+}
+.google-saved-lists h2 { margin: 0 0 12px; font-size: 18px; }
+.google-saved-lists p { margin: 10px 0; line-height: 1.55; }
+.google-saved-lists details { margin: 14px 0; }
+.google-saved-lists summary { cursor: pointer; }
+.google-saved-lists label { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 16px; }
+.google-saved-lists button { padding: 7px 12px; border: 1px solid var(--border, #dedede); border-radius: 7px; background: transparent; cursor: pointer; }
+.google-saved-lists button:disabled { opacity: .6; cursor: wait; }
+.google-saved-lists [role="alert"] { color: #b42318; }

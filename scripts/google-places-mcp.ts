@@ -1,3 +1,8 @@
+import {
+  withMcpBudget,
+  mcpQuotaStatus,
+} from "../server/providers/google-places/mcp-budget.js";
+import { Store } from "../server/store.js";
 import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -12,11 +17,11 @@ import { safeError } from "../server/secrets.js";
 
 process.chdir(fileURLToPath(new URL("../", import.meta.url)));
 
-const server = new McpServer(
+export const server = new McpServer(
   { name: "activity-checker-google-places", version: "0.1.0" },
   {
     instructions:
-      "Use google_places_discovery_batch by default: IDs-only first, then Pro only for productive queries with new place IDs. Never use Enterprise unless the user explicitly asks; an executed Enterprise call also requires confirmEnterprise=true. All live search tools are dry-run unless execute=true. Executed Pro results are stored as local Place cards. API ratings are not persisted; after independent LLM verification, save rating and reviewCount with google_places_store_llm_ratings. Check google_places_status before large batches.",
+      "Before EVERY live Places run: read google_places_status, show today used/remaining and ask the user for a maximum number of HTTP requests for this run. Pass maxRequests (1–100); never reuse an earlier run budget. Daily hard cap 100 Europe/Belgrade shared by Basic/IDs-only and Pro, including failures. No Enterprise MCP tool. Use discovery_batch for new places; exclude only existing restaurant cards in Activity Checker (same restaurant classification as its UI). Takeout import and saved-list checks are paused at the user request; do not ask for exports or complain about missing lists. Matching uses place_id, CID/Maps URL and conservative exact normalized restaurant names. Discovery history alone does not make a place familiar. Do not claim complete novelty when data is insufficient. A smaller budget can stop between IDs and Pro; partial results are expected. Local Pro cards are saved automatically.",
   },
 );
 
@@ -41,6 +46,8 @@ const common = {
   resultsPerQuery: z.number().int().min(1).max(20).default(10),
   maxItems: z.number().int().min(1).max(500).default(100),
   execute: z.boolean().default(false),
+  maxRequests: z.number().int().min(1).max(100).optional(),
+  newOnly: z.boolean().default(true),
   sourceId: z.string().min(1).max(200).default("source-google-places-api"),
 };
 
@@ -48,17 +55,34 @@ server.registerTool(
   "google_places_status",
   {
     description:
-      "Read local Google Places monthly SKU counters, remaining Pro/Enterprise free-tier capacity, and discovered-ID counts. Does not call Google.",
+      "Read local Google Places monthly SKU counters, remaining local monthly capacity and the 100/day MCP budget, and discovered-ID counts. Does not call Google.",
     inputSchema: {},
   },
-  async () => response(getGooglePlacesToolStatus()),
+  async () => {
+    try {
+      const store = Store.openExisting(
+        process.env.ACTIVITY_DB || "../data/activity-checker/activity.sqlite",
+      );
+      try {
+        return response({
+          ...getGooglePlacesToolStatus(),
+          dailyQuota: mcpQuotaStatus(),
+          novelty: {scope: "activity_restaurant_cards", takeout: "paused"},
+        });
+      } finally {
+        store.close();
+      }
+    } catch (error) {
+      return failure(error);
+    }
+  },
 );
 
 server.registerTool(
   "google_places_discovery_batch",
   {
     description:
-      "Default place discovery: run unlimited IDs-only searches, skip known place IDs, then spend Pro requests only on productive queries. Enterprise is never used.",
+      "Default place discovery: run budgeted IDs-only searches, skip known place IDs, then spend Pro requests only on productive queries. Enterprise is never used.",
     inputSchema: {
       ...common,
       minValidResultsPerQuery: z.number().int().min(1).max(20).default(1),
@@ -66,7 +90,12 @@ server.registerTool(
   },
   async (args) => {
     try {
-      return response(await executeGooglePlacesDiscoveryTool(args));
+      const { maxRequests, ...input } = args;
+      return response(
+        await withMcpBudget(args.execute, maxRequests, () =>
+          executeGooglePlacesDiscoveryTool(input),
+        ),
+      );
     } catch (error) {
       return failure(error);
     }
@@ -130,7 +159,12 @@ function registerTier(
     },
     async (args) => {
       try {
-        return response(await executeGooglePlacesTierTool(mode, args));
+        const { maxRequests, ...input } = args;
+        return response(
+          await withMcpBudget(args.execute, maxRequests, () =>
+            executeGooglePlacesTierTool(mode, input),
+          ),
+        );
       } catch (error) {
         return failure(error);
       }
@@ -141,17 +175,12 @@ function registerTier(
 registerTier(
   "google_places_text_search_ids",
   "ids_only",
-  "Text Search Essentials (IDs Only). Unlimited free usage cap; records place IDs for deduplication and returns only the ID-level response. It cannot create a Place card because names and coordinates are absent.",
+  "Text Search Essentials (IDs Only). Counts towards the 100 requests/day MCP cap; records place IDs for deduplication and returns only the ID-level response. It cannot create a Place card because names and coordinates are absent.",
 );
 registerTier(
   "google_places_text_search_pro",
   "pro",
   "Text Search Pro with stable Place-card fields: display name, address, coordinates, types, business status, and googleMapsUri. Executed results are saved as local Place cards. Local hard stop: 5,000 calls per Google billing month.",
 );
-registerTier(
-  "google_places_text_search_enterprise",
-  "enterprise",
-  "Explicit-only Text Search Enterprise with all Pro and Enterprise fields, including rating and userRatingCount. Requires execute=true and confirmEnterprise=true. Local hard stop: 1,000 calls per billing month.",
-);
-
-await server.connect(new StdioServerTransport());
+if (process.argv[1] === fileURLToPath(import.meta.url))
+  await server.connect(new StdioServerTransport());
