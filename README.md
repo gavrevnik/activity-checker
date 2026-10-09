@@ -8,7 +8,7 @@
 
 npm использует `file:../personal-radar/connectors/connectors-ts` и именованные импорты `@personal-radar/connectors/...`. Обычные install/dev/start/build/check/test и MCP-команды автоматически собирают библиотеку; при первом setup устанавливаются её lockfile-зависимости. Ручные symlink не нужны.
 
-SQLite-файлы, текущие карточки/профили/оценки и API/MCP/UI контракты сохранены. Долгосрочные отобранные sources/owners/items/preferences принадлежат Personal Radar Knowledge; существующие локальные данные пока не мигрируют. Discovery сохраняет source-кандидатов с identity/provenance/relevance и явным review; подтверждённые источники предназначены для будущего отдельного переноса в Knowledge. Автоматических Knowledge writes/двустороннего sync нет.
+SQLite-файлы, текущие карточки/профили/оценки и API/MCP/UI контракты сохранены. Долгосрочные отобранные sources/owners/items/preferences принадлежат Personal Radar Knowledge; существующие локальные данные пока не мигрируют. Discovery сохраняет source-кандидатов с identity/provenance/relevance и явным review; подтверждённые источники предназначены для будущего отдельного переноса в Knowledge. Ручной versioned catalog sync и outbox для явно определённых канонических полей описаны в [Catalog Sync](../personal-radar/docs/catalog-sync.md); новые кандидаты требуют утверждённого manifest.
 
 ## Быстрое погружение
 
@@ -574,3 +574,9 @@ scheduler предоставляются закреплённым deployment ada
 Telegram работает через [единый API Personal Radar](../personal-radar/docs/telegram-connector.md). Existing discovery/monitoring/research tools, session и 20-channel input contracts сохранены. `telegram_batch_read` позволяет до 50 sources на logical request: execute=false plan, UUID requestId до отправки, bounded physical groups, partial results и `telegram_batch_result` для saved pages. Новые HTTP routes — `/api/telegram/batch-read` и `/api/telegram/batches/:requestId`; CLI `npm run telegram:batch` (JSON stdin).
 
 Migration 030 добавляет operational journal/gates в существующую activity.sqlite, без переноса карточек или Knowledge. Watermark не продвигается до complete; unknown dispatch требует осознанного retryUnknown, terminal failures — retryFailed. FloodWait gate общий для новых request IDs и old reading tools. Saved UI exclusions не обходятся пустыми caller filters. Universal batch JSON не равен legacy ingestion DTO; new API сама не импортирует Community/Event/posts.
+
+## Personal Radar Catalog Sync
+
+[Архитектура, ownership и команды](../personal-radar/docs/catalog-sync.md). Каталог отображает время последнего sync; глобальный интерес к связанным источникам редактируется отдельно от локального мониторинга. Отправка outbox — отдельный ручной `flush`; запуск приложения не обращается к GitHub. Новые/conflicting записи остаются pending до review.
+
+CLI: `npm run catalog:sync -- status`, `pull --dry-run`, `pull`, `flush --dry-run`. `audit --manifest <private-path>` готовит review; `materialize --radar-id <id>` создаёт только выбранное локальное представление с мониторингом выключенным.

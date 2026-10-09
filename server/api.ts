@@ -1,3 +1,4 @@
+import { registerCatalogApi } from "./catalog-sync.js";
 import { registerTelegramBatchApi } from "./telegram-batch-api.js";
 import { registerGoogleSavedApi } from "./google-saved-api.js";
 import express from "express";
@@ -62,6 +63,7 @@ export function createApi(store: Store, port: number) {
     res.setHeader("Cache-Control", "no-store");
     next();
   });
+  registerCatalogApi(app, store);
   registerGoogleSavedApi(app, store);
   registerAiEventsReviewApi(app, store);
   registerAiMcpDiscoveryApi(app, store);

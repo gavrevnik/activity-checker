@@ -1,3 +1,4 @@
+import { CatalogPanel } from "./CatalogPanel";
 import { useState } from "react";
 import {
   RefreshCw,
@@ -97,6 +98,7 @@ export function Sources({
           <span className="count">{listed.length}</span>
         </div>
       </div>
+      <CatalogPanel />
       <AutoArchiveSetting />
       <div className="type-tabs">
         <button

@@ -1,3 +1,4 @@
+import { enqueueCatalogFeedback } from "../../personal-radar/catalog_sync/node.js";
 import { DatabaseSync } from "node:sqlite";
 import { normalizePersonalStatePatch } from "../shared/personal-state.js";
 import { randomUUID } from "node:crypto";
@@ -92,7 +93,8 @@ export class Store {
     // MCP has no startup migrations, seeding, deduplication or archive side effects.
     // Opening an absent DB must fail rather than create a new user database.
     const info = lstatSync(path);
-    if (!info.isFile() || info.nlink !== 1) throw new Error("Expected existing regular SQLite database.");
+    if (!info.isFile() || info.nlink !== 1)
+      throw new Error("Expected existing regular SQLite database.");
     store.db = new DatabaseSync(path);
     store.db.exec("PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;");
     return store;
@@ -172,11 +174,20 @@ export class Store {
   saveProfile(input: UserProfileInput): UserProfile {
     const data = userProfileSchema.parse(input);
     const updatedAt = now();
-    this.db
-      .prepare(
-        "INSERT INTO user_profile (id,data,updatedAt) VALUES ('main',?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,updatedAt=excluded.updatedAt",
-      )
-      .run(JSON.stringify(data), updatedAt);
+    this.transaction(() => {
+      this.db
+        .prepare(
+          "INSERT INTO user_profile (id,data,updatedAt) VALUES ('main',?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,updatedAt=excluded.updatedAt",
+        )
+        .run(JSON.stringify(data), updatedAt);
+      enqueueCatalogFeedback(
+        this.db,
+        "user_profile",
+        "main:music",
+        "statements",
+        data.musicPreferences,
+      );
+    });
     return { ...data, updatedAt };
   }
   private upgradeUserProfile() {

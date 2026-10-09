@@ -1,3 +1,4 @@
+import { radarIdFor } from "../../../../personal-radar/catalog_sync/node.js";
 import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
@@ -91,6 +92,7 @@ export async function sampleTelegramChannelPosts(input: {
 }
 
 export interface TelegramMonitoringChannel {
+  radarId?: string;
   communityId: string;
   title: string;
   username: string;
@@ -182,6 +184,9 @@ export function listTelegramMonitoringChannels(
     return [
       {
         communityId: row.id,
+        ...(radarIdFor(database, "entities", row.id)
+          ? { radarId: radarIdFor(database, "entities", row.id)! }
+          : {}),
         title: String(data.title || `@${username}`),
         username,
         url: `https://t.me/${username}`,
@@ -314,7 +319,17 @@ export async function monitorTelegramChannelPosts(input: {
     pythonPath: secrets.TELEGRAM_PYTHON,
     sessionPath: secrets.TELEGRAM_SESSION_PATH,
   });
-  return { ...result, warnings: [...warnings, ...result.warnings] };
+  return {
+    ...result,
+    warnings: [...warnings, ...result.warnings],
+    sourceReferences: stored
+      .filter((s) => channels.includes(s.username) && s.radarId)
+      .map((s) => ({
+        username: s.username,
+        communityId: s.communityId,
+        radarId: s.radarId,
+      })),
+  };
 }
 
 export async function executeTelegramTool(

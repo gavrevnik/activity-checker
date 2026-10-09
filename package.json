@@ -45,7 +45,8 @@
     "pregoogle-places:mcp": "node ../personal-radar/connectors/bootstrap-ts.mjs",
     "preresearch:mcp": "node ../personal-radar/connectors/bootstrap-ts.mjs",
     "telegram:batch": "node --import tsx scripts/telegram-batch.ts",
-    "pretelegram:batch": "node ../personal-radar/connectors/bootstrap-ts.mjs"
+    "pretelegram:batch": "node ../personal-radar/connectors/bootstrap-ts.mjs",
+    "catalog:sync": "node --import tsx scripts/catalog-sync.ts"
   },
   "dependencies": {
     "@fontsource-variable/golos-text": "^5.3.0",
