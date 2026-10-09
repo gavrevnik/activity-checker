@@ -2,14 +2,8 @@ import { z } from "zod";
 import defaults from "../data/telegram-monitoring-filters.json";
 import type { Entity } from "./model.js";
 
-export function telegramUsername(value: string) {
-  return value
-    .trim()
-    .replace(/^https?:\/\/(?:www\.)?t\.me\/(?:s\/)?/i, "")
-    .replace(/^@/, "")
-    .split(/[/?#]/)[0]
-    .toLowerCase();
-}
+import { telegramUsername } from "@personal-radar/connectors/telegram";
+export { telegramUsername };
 
 const terms = z
   .array(z.string().trim().min(1).max(200))

@@ -182,3 +182,7 @@ MCP память пользовательских вкусов не изменя
 ## Канонический источник и кандидат
 
 Текущий поиск/импорт в Community остаётся локальным. Для последующего review сохранять channel numeric ID/username/URL, title/description, provider/operation/query/time и причину релевантности. Сначала identity/dedupe (включая скрытые/исключённые карточки), затем description → pins → recent posts; выбранный канал — кандидат для отдельно согласованного Personal Radar Knowledge save. Source канала не равен Event/post. Этот workflow не пишет Knowledge автоматически. См. [модель владения](../../personal-radar/docs/storage-boundaries.md).
+
+## Единый API и batch 50
+
+[Telegram Connector](../../personal-radar/docs/telegram-connector.md) сохраняет прежние schemas и physical tools. Для logical read до 50 каналов использовать `telegram_batch_read` с requestId/execute=true; сначала plan, после потери ответа — `telegram_batch_result` без RPC. Сохранять independent cursors; watermark только complete. Respect FloodWait/hasUnread, не переисполнять unknown без human retryUnknown. Pins не фильтровать правилами ленты, discussion replies не исключать. Новая выдача — universal DTO/journal, не автоматический Community/Event import и не Knowledge write.

@@ -181,3 +181,7 @@ FloodWait/ошибка авторизации останавливает Telegra
 сколько новых карточек, обновлённых оценок и дублей, какие источники недоступны или
 прочитаны частично. Если подходящих событий мало, сказать это прямо и предложить
 ближайшие осмысленные альтернативы с явным указанием отличия от запроса.
+
+## Durable Telegram read до 50 sources
+
+Старые tools сохраняют batch cap 20. Если нужно читать до 50 sources с восстановлением, использовать новый `telegram_batch_read`: сохранить UUID requestId до первого вызова, сначала execute=false plan, затем execute=true в рамках уже разрешённого чтения. После обрыва сначала `telegram_batch_result` без RPC; читать saved pages по nextOffset/hasUnread, продолжать тот же requestId только для unfinished sources. Watermark использовать только complete; FloodWait gate не обходить новым ID/аккаунтом. Unknown dispatch не повторять автоматически: retryUnknown требует осознанного решения владельца; failed sources — explicit retryFailed. Universal result не выдавать за старый ingestion DTO, он сам не добавляет карточки/Event/Knowledge. Pins и обсуждения сохраняют особую семантику фильтров. Подробности — [Telegram Connector](../../../personal-radar/docs/telegram-connector.md).

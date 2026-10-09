@@ -43,7 +43,9 @@
     "pretelegram:monitoring:mcp": "node ../personal-radar/connectors/bootstrap-ts.mjs",
     "prefoursquare:mcp": "node ../personal-radar/connectors/bootstrap-ts.mjs",
     "pregoogle-places:mcp": "node ../personal-radar/connectors/bootstrap-ts.mjs",
-    "preresearch:mcp": "node ../personal-radar/connectors/bootstrap-ts.mjs"
+    "preresearch:mcp": "node ../personal-radar/connectors/bootstrap-ts.mjs",
+    "telegram:batch": "node --import tsx scripts/telegram-batch.ts",
+    "pretelegram:batch": "node ../personal-radar/connectors/bootstrap-ts.mjs"
   },
   "dependencies": {
     "@fontsource-variable/golos-text": "^5.3.0",

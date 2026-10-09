@@ -1,3 +1,4 @@
+import { registerTelegramBatchApi } from "./telegram-batch-api.js";
 import { registerGoogleSavedApi } from "./google-saved-api.js";
 import express from "express";
 import { z, ZodError } from "zod";
@@ -64,6 +65,7 @@ export function createApi(store: Store, port: number) {
   registerGoogleSavedApi(app, store);
   registerAiEventsReviewApi(app, store);
   registerAiMcpDiscoveryApi(app, store);
+  registerTelegramBatchApi(app, store);
   registerTelegramEventsApi(app, store);
   registerAiDigestsApi(app, store);
   app.get("/api/bootstrap", (_req, res) =>

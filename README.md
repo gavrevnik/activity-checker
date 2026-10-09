@@ -568,3 +568,9 @@ SQLite-бэкап Activity Checker; отдельной базы или авто�
 Бизнес-логика — `server/digest-weekly.ts`; закрытые MCP-операции и проверка доставки
 scheduler предоставляются закреплённым deployment adapter Agent Stack. Транспорт
 не регистрирует новых HTTP endpoints и не расширяет платных провайдеров.
+
+## Telegram Connector и durable batch
+
+Telegram работает через [единый API Personal Radar](../personal-radar/docs/telegram-connector.md). Existing discovery/monitoring/research tools, session и 20-channel input contracts сохранены. `telegram_batch_read` позволяет до 50 sources на logical request: execute=false plan, UUID requestId до отправки, bounded physical groups, partial results и `telegram_batch_result` для saved pages. Новые HTTP routes — `/api/telegram/batch-read` и `/api/telegram/batches/:requestId`; CLI `npm run telegram:batch` (JSON stdin).
+
+Migration 030 добавляет operational journal/gates в существующую activity.sqlite, без переноса карточек или Knowledge. Watermark не продвигается до complete; unknown dispatch требует осознанного retryUnknown, terminal failures — retryFailed. FloodWait gate общий для новых request IDs и old reading tools. Saved UI exclusions не обходятся пустыми caller filters. Universal batch JSON не равен legacy ingestion DTO; new API сама не импортирует Community/Event/posts.
