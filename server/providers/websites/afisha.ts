@@ -1,9 +1,7 @@
 import { load } from "cheerio";
-import { z } from "zod";
 import { entitySchema } from "../../../shared/model.js";
 import { parseCalendarInput } from "../../../shared/dates.js";
 import { nameKey } from "../../normalize.js";
-import { fetchJson } from "../http.js";
 import {
   defineProvider,
   type ProviderContext,
@@ -13,57 +11,13 @@ import {
 const origin = "https://afisha.rs";
 const maxPages = 100;
 const excludedSectionPaths = new Set(["/ru/deti", "/ru/kino"]);
-const imageSchema = z
-  .object({
-    original: z.string().nullish(),
-    thumb640x360: z.string().nullish(),
-  })
-  .passthrough();
-const labelSchema = z
-  .object({
-    title: z.string(),
-    slug: z.string().nullish(),
-  })
-  .passthrough();
-const eventSchema = z
-  .object({
-    id: z.union([z.number().int().nonnegative(), z.string().min(1)]),
-    title: z.string().min(1),
-    description: z.string().nullish(),
-    url: z.string().min(1),
-    image_styles: imageSchema.nullish(),
-    date: z.string().min(1),
-    date2: z.string().nullish(),
-    time: z.string().nullish(),
-    price: z.union([z.string(), z.number(), z.null()]).optional(),
-    section: labelSchema.nullish(),
-    venue: labelSchema.nullish(),
-    ticket_link: z.string().nullish(),
-  })
-  .passthrough();
-const pageSchema = z
-  .object({
-    page_count: z.number().int().min(0).max(maxPages),
-    item_count: z.number().int().min(0),
-    items: z.array(z.unknown()),
-  })
-  .passthrough();
 
-function sourceUrl(ctx: ProviderContext) {
-  const configured = new URL(ctx.source.url || `${origin}/ru`);
-  if (
-    !["afisha.rs", "www.afisha.rs"].includes(configured.hostname) ||
-    !["/ru", "/ru/"].includes(configured.pathname)
-  )
-    throw new Error("Afisha.rs: укажите https://afisha.rs/ru.");
-  return configured;
-}
-
-function pageUrl(ctx: ProviderContext, page: number) {
-  sourceUrl(ctx);
-  return `${origin}/ru/api/term-content/0/all/${page}`;
-}
-
+import {
+  eventSchema,
+  pageSchema,
+  sourceUrl,
+  readPage as fetchAfishaPage,
+} from "@personal-radar/connectors/afisha";
 function safeUrl(value: string | null | undefined, localOnly = false) {
   if (!value) return "";
   try {
@@ -225,7 +179,7 @@ export function parseAfishaPage(value: unknown, ctx: ProviderContext) {
 }
 
 async function readPage(ctx: ProviderContext, page: number) {
-  return parseAfishaPage(await fetchJson(pageUrl(ctx, page)), ctx);
+  return parseAfishaPage(await fetchAfishaPage(ctx, page), ctx);
 }
 
 async function politePause() {

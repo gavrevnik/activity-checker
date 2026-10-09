@@ -178,3 +178,7 @@ MCP память пользовательских вкусов не изменя
 
 После обновления переподключить оба MCP-процесса. HTTP Sync/UI по-прежнему имеют
 только прежние discovery operations; новые research steps предназначены для модели.
+
+## Канонический источник и кандидат
+
+Текущий поиск/импорт в Community остаётся локальным. Для последующего review сохранять channel numeric ID/username/URL, title/description, provider/operation/query/time и причину релевантности. Сначала identity/dedupe (включая скрытые/исключённые карточки), затем description → pins → recent posts; выбранный канал — кандидат для отдельно согласованного Personal Radar Knowledge save. Source канала не равен Event/post. Этот workflow не пишет Knowledge автоматически. См. [модель владения](../../personal-radar/docs/storage-boundaries.md).

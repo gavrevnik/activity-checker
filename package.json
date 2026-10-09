@@ -28,7 +28,22 @@
     "foursquare:mcp": "node --import tsx scripts/foursquare-mcp.ts",
     "google-places:mcp": "node --import tsx scripts/google-places-mcp.ts",
     "restaurants:import": "node --import tsx scripts/import-legacy-restaurants.ts",
-    "research:mcp": "node --import tsx scripts/activity-research-mcp.ts"
+    "research:mcp": "node --import tsx scripts/activity-research-mcp.ts",
+    "preinstall": "node ../personal-radar/connectors/bootstrap-ts.mjs",
+    "predev": "node ../personal-radar/connectors/bootstrap-ts.mjs",
+    "prestart": "node ../personal-radar/connectors/bootstrap-ts.mjs",
+    "prebuild": "node ../personal-radar/connectors/bootstrap-ts.mjs",
+    "precheck": "node ../personal-radar/connectors/bootstrap-ts.mjs",
+    "pretest": "node ../personal-radar/connectors/bootstrap-ts.mjs",
+    "preapify:tool": "node ../personal-radar/connectors/bootstrap-ts.mjs",
+    "preapify:mcp": "node ../personal-radar/connectors/bootstrap-ts.mjs",
+    "pretelegram:tool": "node ../personal-radar/connectors/bootstrap-ts.mjs",
+    "pretelegram:mcp": "node ../personal-radar/connectors/bootstrap-ts.mjs",
+    "pretelegram:discovery:mcp": "node ../personal-radar/connectors/bootstrap-ts.mjs",
+    "pretelegram:monitoring:mcp": "node ../personal-radar/connectors/bootstrap-ts.mjs",
+    "prefoursquare:mcp": "node ../personal-radar/connectors/bootstrap-ts.mjs",
+    "pregoogle-places:mcp": "node ../personal-radar/connectors/bootstrap-ts.mjs",
+    "preresearch:mcp": "node ../personal-radar/connectors/bootstrap-ts.mjs"
   },
   "dependencies": {
     "@fontsource-variable/golos-text": "^5.3.0",
@@ -41,7 +56,8 @@
     "node-ical": "^0.22.1",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "zod": "^4.1.5"
+    "zod": "^4.1.5",
+    "@personal-radar/connectors": "file:../personal-radar/connectors/connectors-ts"
   },
   "devDependencies": {
     "@types/express": "^5.0.3",

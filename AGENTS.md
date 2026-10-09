@@ -25,3 +25,9 @@ When this checkout is inside `life-stack`, first read the shared [workspace inst
 - В Claw общий веб-поиск выполнять штатным hosted `web_search` Codex (live) через текущий OAuth-транспорт. `activity_web_search` — запасной HTML-поиск; `activity_web_read(render="browser")` — чтение динамической страницы по известной URL. Native search и чтение страницы — разные возможности; искать дополнительный API key для штатного hosted search не требуется.
 
 - Для погоды использовать `activity_weather`; проверять координаты, timeZone и даты. Числа возвращаются с единицами и временем получения; прогноз не равен гарантии. Указывать Open-Meteo как источник.
+
+## Общие коннекторы и Knowledge
+
+- Provider API/transport implementations находятся в [Personal Radar connectors](../personal-radar/connectors/README.md); SQLite, domain filters/dedupe/AI/UI и прикладные MCP остаются здесь. Сохранять обязательные quota adapters; тестировать внешние операции mocks на фактическом общем модуле.
+- `personal-radar/knowledge` — канонический каталог долгосрочных знаний. Текущие SQLite-профили, источники/интересы и реакции сохраняются без автоматической миграции. Следовать [границам владения](../personal-radar/docs/storage-boundaries.md); не добавлять auto outbox, GitHub writes или двусторонний sync из пользовательских действий.
+- Discovery возвращает source-кандидатов: name/URL/platform/external IDs/description/provenance/evidence/relevance. Review/deduplication по стабильной identity предшествуют потенциальному переносу подтверждённых источников в Knowledge отдельным запросом. Разрешённые локальные импорты продолжают использовать прежние tools/flags/budgets; discovery/digest не разрешают запись Knowledge.

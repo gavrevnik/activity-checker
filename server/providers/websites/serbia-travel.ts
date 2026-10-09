@@ -1,53 +1,25 @@
-import { load } from "cheerio";
-import { z } from "zod";
 import { entitySchema } from "../../../shared/model.js";
 import { localDay, parseCalendarInput } from "../../../shared/dates.js";
 import { normalize } from "../../normalize.js";
-import { fetchJson } from "../http.js";
 import {
   defineProvider,
   type ProviderContext,
   type RawItem,
 } from "../types.js";
 const origin = "https://www.serbia.travel";
-const endpoint = `${origin}/en/wp-json/event-listings/v1/get-events/`;
-const responseSchema = z.object({ html: z.string(), hasMore: z.boolean() });
 export function parseSerbiaCalendar(value: unknown, ctx: ProviderContext) {
-  const response = responseSchema.safeParse(value);
-  if (!response.success)
-    throw new Error(
-      "Serbia Travel изменил формат календаря; нужно обновить адаптер.",
-    );
-  const $ = load(response.data.html);
-  const items: RawItem[] = [];
-  const emptyNotice =
-    !response.data.hasMore && $("body").text().trim() === "No events found.";
-  if (response.data.html.trim() && !$(".event-item").length && !emptyNotice)
-    throw new Error("Serbia Travel: карточки календаря не найдены.");
-  $(".event-item").each((_, node) => {
-    const card = $(node),
-      title = card.find("h2").text().trim(),
-      city = card.find(".city").text().trim();
-    const url = new URL(card.find("a.event-link").attr("href") || "", origin);
-    if (url.origin !== origin || !url.pathname.startsWith("/en/events/"))
-      throw new Error("Serbia Travel: некорректная ссылка события.");
-    const date = card.find(".date-from-to").text().trim();
-    const dates = date.match(/\d{2}\.\d{2}\.\d{4}/g) || [];
-    if (!title || !city || !dates.length || dates.length > 2)
-      throw new Error(
-        "Serbia Travel: у события отсутствует название, город или подтверждённая дата.",
-      );
+  return parseCalendar(value, (entry): RawItem | null => {
+    const { title, city, date, dates, rawCategory, url, id } = entry;
     const startAt = parseCalendarInput(dates[0]!, "", ctx.scope.timezone);
     const endAt = dates[1]
       ? parseCalendarInput(dates[1], "", ctx.scope.timezone)
       : "";
-    const rawCategory = card.find(".categories").text().trim();
     const normalized = normalize({
       type: "Event",
       title,
       city,
       country: "RS",
-      url: url.href,
+      url,
       startAt,
       endAt,
       rawCategory,
@@ -61,47 +33,26 @@ export function parseSerbiaCalendar(value: unknown, ctx: ProviderContext) {
               ? "Еда и напитки"
               : "Другое",
     });
-    if (ctx.scope.city && normalized.city !== ctx.scope.city) return;
-    // Dates are part of the identity: the site can reuse an annual festival page.
-    const externalId = `${card.find("[data-id]").attr("data-id") || url.pathname}:${startAt}`;
-    items.push({
+    if (ctx.scope.city && normalized.city !== ctx.scope.city) return null;
+    const externalId = `${id}:${startAt}`;
+    return {
       externalId,
-      url: url.href,
+      url,
       rawText: [title, city, date, rawCategory].join("\n"),
       payload: {
-        original: { title, city, date, rawCategory, url: url.href },
+        original: { title, city, date, rawCategory, url },
         normalized,
       },
-    });
+    };
   });
-  if (response.data.hasMore && !$(".event-item").length)
-    throw new Error("Serbia Travel вернул пустую промежуточную страницу.");
-  return { items, hasMore: response.data.hasMore };
 }
+import {
+  read as readCalendar,
+  parseCalendar,
+} from "@personal-radar/connectors/serbia-travel";
 async function read(ctx: ProviderContext, page: number) {
-  const url = new URL(ctx.source.url);
-  if (
-    !["serbia.travel", "www.serbia.travel"].includes(url.hostname) ||
-    !["/en/event-calendar/", "/en/event-calendar"].includes(url.pathname)
-  )
-    throw new Error(
-      "Serbia Travel: укажите https://www.serbia.travel/en/event-calendar/.",
-    );
   return parseSerbiaCalendar(
-    await fetchJson(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "get_filtered_events",
-        keyword: ctx.source.keyword || "",
-        location: ctx.scope.city || "",
-        start_date: localDay(new Date(), ctx.scope.timezone),
-        end_date: "",
-        categories: [],
-        lang: "en",
-        page,
-      }),
-    }),
+    await readCalendar(ctx, page, localDay(new Date(), ctx.scope.timezone)),
     ctx,
   );
 }

@@ -5,7 +5,7 @@ import tickets, {
 } from "../server/providers/websites/tickets";
 import { fetchJson } from "../server/providers/http";
 import type { ProviderContext } from "../server/providers/types";
-vi.mock("../server/providers/http", () => ({ fetchJson: vi.fn() }));
+vi.mock("@personal-radar/connectors/http", () => ({ fetchJson: vi.fn() }));
 const request = vi.mocked(fetchJson);
 const town = { ID: 8918, Title: "Beograd" };
 const zemun = { ID: 164, Title: "Beograd (Zemun)" };
@@ -26,6 +26,12 @@ const event = (Id = 1, overrides = {}) => ({
 });
 let store: Store, ctx: ProviderContext;
 beforeEach(() => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => {
+      throw new Error("Unexpected network request in offline provider test");
+    }),
+  );
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-10-01T12:00:00Z"));
   store = new Store(":memory:");
@@ -37,6 +43,7 @@ beforeEach(() => {
   request.mockReset();
 });
 afterEach(() => {
+  vi.unstubAllGlobals();
   vi.useRealTimers();
   store.close();
 });

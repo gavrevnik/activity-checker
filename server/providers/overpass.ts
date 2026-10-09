@@ -1,50 +1,11 @@
 import { defineProvider, type ProviderContext, type RawItem } from "./types.js";
-import { fetchJson } from "./http.js";
-const defaultEndpoint = "https://overpass-api.de/api/interpreter";
-const fallbackEndpoint = "https://overpass.private.coffee/api/interpreter";
-export async function requestOverpass(ctx: ProviderContext, test = false) {
-  const primary = ctx.secrets.OVERPASS_URL || defaultEndpoint;
-  const endpoints =
-    primary === defaultEndpoint ? [primary, fallbackEndpoint] : [primary];
-  for (let index = 0; index < endpoints.length; index++) {
-    try {
-      const data = await fetchJson(
-        endpoints[index],
-        {
-          method: "POST",
-          body: new URLSearchParams({ data: overpassQuery(ctx, test) }),
-        },
-        test ? 20000 : 45000,
-      );
-      if (!Array.isArray(data.elements))
-        throw new Error("В ответе Overpass отсутствует elements.");
-      if (data.remark)
-        throw new Error(
-          "Overpass вернул неполный ответ: " +
-            String(data.remark).slice(0, 250),
-        );
-      return {
-        data,
-        warnings: index
-          ? [
-              "Основной сервер Overpass недоступен; данные получены с резервного overpass.private.coffee.",
-            ]
-          : [],
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (
-        index + 1 < endpoints.length &&
-        /HTTP 50[234]|timeout|timed out|fetch failed/i.test(message)
-      )
-        continue;
-      throw new Error(
-        `Overpass: ${message}${index ? " Резервный сервер также недоступен. Повторите позже; сохранённые места остаются в базе." : ""}`,
-      );
-    }
-  }
-  throw new Error("Overpass недоступен.");
-}
+import { requestOverpass as request } from "@personal-radar/connectors/overpass";
+export const requestOverpass = (ctx: ProviderContext, test = false) =>
+  request(
+    overpassQuery(ctx, test),
+    ctx.secrets.OVERPASS_URL || undefined,
+    test,
+  );
 export function overpassQuery(ctx: ProviderContext, test = false) {
   if (!ctx.scope.osmAreaId)
     throw new Error("Для этой географии не задан osmAreaId в scopes.");

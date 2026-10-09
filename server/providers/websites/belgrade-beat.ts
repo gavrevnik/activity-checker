@@ -1,4 +1,3 @@
-import { load } from "cheerio";
 import { entitySchema } from "../../../shared/model.js";
 import { fromLocalDateTime, localDay } from "../../../shared/dates.js";
 import { canonicalUrl } from "../../normalize.js";
@@ -11,59 +10,12 @@ import { fetchText } from "../http.js";
 
 const origin = "https://belgrade-beat.com";
 const pages = ["/events/this-week", "/events/next-week"] as const;
-const months = new Map(
-  [
-    "january",
-    "february",
-    "march",
-    "april",
-    "may",
-    "june",
-    "july",
-    "august",
-    "september",
-    "october",
-    "november",
-    "december",
-  ].map((month, index) => [month, index]),
-);
-
-function addDays(day: string, count: number) {
-  const value = new Date(`${day}T12:00:00Z`);
-  value.setUTCDate(value.getUTCDate() + count);
-  return value.toISOString().slice(0, 10);
-}
-
-export function belgradeBeatDay(heading: string, today = localDay()) {
-  const normalized = heading.replace(/\s+/g, " ").trim().toLowerCase();
-  if (normalized.includes("today's events")) return today;
-  if (normalized.includes("tomorrow's events")) return addDays(today, 1);
-  const match =
-    /(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday),\s+([a-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?\s+events/i.exec(
-      normalized,
-    );
-  if (!match) return "";
-  const month = months.get(match[1].toLowerCase());
-  const day = Number(match[2]);
-  if (month === undefined || day < 1 || day > 31) return "";
-  const current = new Date(`${today}T12:00:00Z`);
-  const candidates = [-1, 0, 1]
-    .map(
-      (offset) =>
-        new Date(Date.UTC(current.getUTCFullYear() + offset, month, day, 12)),
-    )
-    .filter(
-      (candidate) =>
-        candidate.getUTCMonth() === month && candidate.getUTCDate() === day,
-    )
-    .sort(
-      (a, b) =>
-        Math.abs(a.getTime() - current.getTime()) -
-        Math.abs(b.getTime() - current.getTime()),
-    );
-  return candidates[0]?.toISOString().slice(0, 10) || "";
-}
-
+import {
+  belgradeBeatDay as parseDay,
+  parseBelgradeBeatPage as parsePage,
+} from "@personal-radar/connectors/belgrade-beat";
+export const belgradeBeatDay = (heading: string, today = localDay()) =>
+  parseDay(heading, today);
 function categoryFor(tags: string[]) {
   const value = tags.join(" ").toLowerCase();
   if (/concert|music/.test(value)) return "Музыка";
@@ -75,72 +27,25 @@ function categoryFor(tags: string[]) {
   return "Другое";
 }
 
-function absolute(value: string | undefined) {
-  if (!value) return "";
-  try {
-    const url = new URL(value, origin);
-    return url.origin === origin ? url.href : "";
-  } catch {
-    return "";
-  }
-}
-
 export function parseBelgradeBeatPage(
   html: string,
   pageUrl: string,
   ctx: ProviderContext,
   today = localDay(new Date(), ctx.scope.timezone),
 ) {
-  const $ = load(html);
-  const items: RawItem[] = [];
-  const warnings: string[] = [];
-  let day = "";
-  let eventNodes = 0;
-  $("h2.mt0.pt4.f2x.ttu, .js-event").each((_, element) => {
-    const node = $(element);
-    if (element.tagName === "h2") {
-      day = belgradeBeatDay(node.text(), today);
-      if (!day)
-        warnings.push(
-          `Belgrade Beat: не распознана дата раздела «${node.text().replace(/\s+/g, " ").trim()}».`,
-        );
-      return;
-    }
-    eventNodes++;
-    const card = node.children(".dn.db-ns.rowx").first();
-    const link = card.find('a[href^="/events/"]').first();
-    const url = absolute(link.attr("href"));
-    const title = card.find("h2").first().text().replace(/\s+/g, " ").trim();
-    if (!day || !url || !title) {
-      warnings.push("Belgrade Beat: неполная карточка события пропущена.");
-      return;
-    }
-    const description = card
-      .find(".colx.w-75 > .mt2.tj")
-      .first()
-      .text()
-      .replace(/\s+/g, " ")
-      .trim();
-    const from = card
-      .find(".colx.w-75 > .mt2")
-      .filter((_, row) => $(row).text().includes("From:"))
-      .first()
-      .text()
-      .replace(/\s+/g, " ")
-      .trim();
-    const time = /\b([01]\d|2[0-3]):[0-5]\d\b/.exec(from)?.[0] || "";
-    const venues = card
-      .find('a[href^="/venues/"]')
-      .toArray()
-      .map((venue) => $(venue).text().replace(/\s+/g, " ").trim())
-      .filter(Boolean);
-    const tags = card
-      .find(".mt1 .gold")
-      .toArray()
-      .map((tag) => $(tag).text().replace(/\s+/g, " ").trim())
-      .filter((tag, index, all) => !!tag && all.indexOf(tag) === index);
-    const imageUrl = absolute(card.find("img").first().attr("src"));
-    const externalId = new URL(url).pathname.replace(/^\/events\//, "");
+  return parsePage(html, pageUrl, today, (entry): RawItem => {
+    const {
+      externalId,
+      headingDay: day,
+      time,
+      title,
+      description,
+      venues,
+      tags,
+      url,
+      imageUrl,
+      ...rest
+    } = entry;
     const normalized = entitySchema.parse({
       type: "Event",
       title,
@@ -157,7 +62,7 @@ export function parseBelgradeBeatPage(
       externalId,
       knownIds: { belgrade_beat: externalId },
     });
-    items.push({
+    return {
       externalId,
       url,
       rawText: [title, description, normalized.startAt, normalized.venue]
@@ -165,11 +70,10 @@ export function parseBelgradeBeatPage(
         .join("\n"),
       payload: {
         original: {
-          pageUrl,
+          ...rest,
           headingDay: day,
           title,
           description,
-          from,
           venues,
           tags,
           url,
@@ -177,17 +81,8 @@ export function parseBelgradeBeatPage(
         },
         normalized,
       },
-    });
+    };
   });
-  if (!eventNodes)
-    throw new Error(
-      "Belgrade Beat: структура страницы изменилась — карточки .js-event не найдены.",
-    );
-  if (!items.length)
-    throw new Error(
-      "Belgrade Beat: карточки найдены, но ни одну не удалось распознать.",
-    );
-  return { items, warnings };
 }
 
 export function dedupeBelgradeBeatItems(items: RawItem[]) {

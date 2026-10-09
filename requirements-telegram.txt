@@ -1,1 +1,1 @@
-Telethon==1.45.0
+-e ../personal-radar/connectors/connectors-python[telegram]

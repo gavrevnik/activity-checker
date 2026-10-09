@@ -7,10 +7,8 @@ from pathlib import Path
 from unittest.mock import patch
 from telethon import types
 
-spec = importlib.util.spec_from_file_location("telegram_worker", Path(__file__).parents[1] / "workers/telegram_mtproto.py")
-worker = importlib.util.module_from_spec(spec)
-sys.modules[spec.name] = worker
-spec.loader.exec_module(worker)
+from personal_radar_connectors.telegram import worker as worker
+worker.MONITORING_FILTERS={"excludeKeywords":["blocked test phrase"]}
 stamp = datetime(2026, 10, 1, 10, tzinfo=timezone.utc)
 
 def message(id, text="Открытая встреча, 1000 RSD", **kwargs):

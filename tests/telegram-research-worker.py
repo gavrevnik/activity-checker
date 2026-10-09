@@ -10,10 +10,8 @@ from telethon import types, functions, errors
 
 directory = Path(__file__).parents[1] / "workers"
 sys.path.insert(0, str(directory))
-spec = importlib.util.spec_from_file_location("telegram_worker_research_test", directory / "telegram_mtproto.py")
-base = importlib.util.module_from_spec(spec)
-sys.modules[spec.name] = base
-spec.loader.exec_module(base)
+from personal_radar_connectors.telegram import worker as base
+base.MONITORING_FILTERS={"excludeKeywords":["blocked test phrase"]}
 from telegram_research import command_research, validate_input
 
 stamp = datetime(2026, 10, 1, 10, tzinfo=timezone.utc)

@@ -1,18 +1,16 @@
 import { defineProvider, type ProviderContext } from "./types.js";
-import { fetchJson } from "./http.js";
-const request = (ctx: ProviderContext, page = 0, size = 200) => {
-  const u = new URL("https://app.ticketmaster.com/discovery/v2/events.json");
-  u.search = new URLSearchParams({
-    apikey: ctx.secrets.TICKETMASTER_API_KEY!,
-    countryCode: ctx.scope.country,
-    size: String(size),
-    page: String(page),
-    sort: "date,asc",
-    ...(ctx.scope.city ? { city: ctx.scope.city } : {}),
-    ...(ctx.source.keyword ? { keyword: ctx.source.keyword } : {}),
-  }).toString();
-  return fetchJson(u.href);
-};
+import { request as requestEvents } from "@personal-radar/connectors/ticketmaster";
+const request = (ctx: ProviderContext, page = 0, size = 200) =>
+  requestEvents(
+    {
+      apiKey: ctx.secrets.TICKETMASTER_API_KEY!,
+      country: ctx.scope.country,
+      city: ctx.scope.city,
+      keyword: ctx.source.keyword,
+    },
+    page,
+    size,
+  );
 export const ticketmaster = defineProvider(
   {
     id: "ticketmaster",

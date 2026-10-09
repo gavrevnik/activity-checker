@@ -1,6 +1,9 @@
+import {
+  parseIcs,
+  parseXml,
+  jsonLdBlocks,
+} from "@personal-radar/connectors/feeds";
 import { load } from "cheerio";
-import { XMLParser } from "fast-xml-parser";
-import ical from "node-ical";
 import { createHash } from "node:crypto";
 import {
   entitySchema,
@@ -77,7 +80,7 @@ export function parseStructured(
     format === "ics" ||
     (format === "auto" && body.trim().startsWith("BEGIN:VCALENDAR"))
   ) {
-    const entries = ical.sync.parseICS(body);
+    const entries = parseIcs(body);
     for (const r of Object.values(entries)) {
       if (r.type !== "VEVENT") continue;
       if (r.rrule || r.recurrenceid) {
@@ -112,12 +115,7 @@ export function parseStructured(
     format === "rss" ||
     (format === "auto" && /^\s*<(?:\?xml|rss|feed)/.test(body))
   ) {
-    const parser = new XMLParser({
-      ignoreAttributes: false,
-      attributeNamePrefix: "@_",
-      processEntities: false,
-    });
-    const doc = parser.parse(body);
+    const doc = parseXml(body);
     for (const r of array(doc.rss?.channel?.item || doc.feed?.entry)) {
       const link =
         typeof r.link === "string"
@@ -162,14 +160,9 @@ export function parseStructured(
       }
       blocks.push(parsed);
     } else {
-      const $ = load(body);
-      $('script[type="application/ld+json"]').each((_, el) => {
-        try {
-          blocks.push(JSON.parse($(el).text()));
-        } catch {
-          warnings.push("Один блок JSON-LD содержит невалидный JSON.");
-        }
-      });
+      const result = jsonLdBlocks(body);
+      blocks.push(...result.blocks);
+      warnings.push(...result.warnings);
     }
     function visit(n: any) {
       if (!n || typeof n !== "object") return;

@@ -1,3 +1,8 @@
+import {
+  connect as connectAllEvents,
+  fetchApiPage as readAllEventsPage,
+  randomPause,
+} from "@personal-radar/connectors/allevents";
 import { randomUUID } from "node:crypto";
 import { load } from "cheerio";
 import { z } from "zod";
@@ -7,7 +12,6 @@ import {
   type SyncPlan,
 } from "../../../shared/model.js";
 import { fromLocalDateTime, localDay } from "../../../shared/dates.js";
-import { validateRemote } from "../http.js";
 import {
   defineProvider,
   type ProviderContext,
@@ -15,14 +19,11 @@ import {
 } from "../types.js";
 
 const origin = "https://allevents.in";
-const endpoint = `${origin}/api/index.php/categorization/web/v1/list`;
 export const ALLEVENTS_ROWS = 50;
 export const ALLEVENTS_MAX_PAGES = 20;
 const ALLEVENTS_PREVIEW_TTL_MS = 10 * 60 * 1000;
 const embeddedContinuationRows = 46;
 const websitePageRows = 15;
-const maxBytes = 20 * 1024 * 1024;
-const blockStatuses = new Set([401, 403, 429, 502, 503, 504]);
 export const allEventsCategories = [
   { value: "all", label: "Все события" },
   { value: "music", label: "Музыка" },
@@ -211,146 +212,10 @@ function validateSource(ctx: ProviderContext) {
   if (ctx.scope.id !== "belgrade")
     throw new Error("AllEvents: адаптер поддерживает только Белград.");
 }
-async function randomPause() {
-  if (process.env.NODE_ENV === "test") return;
-  await new Promise((resolve) =>
-    setTimeout(resolve, 2000 + Math.floor(Math.random() * 1001)),
-  );
-}
-function cookieFrom(headers: Headers) {
-  const values =
-    typeof (headers as Headers & { getSetCookie?: () => string[] })
-      .getSetCookie === "function"
-      ? (headers as Headers & { getSetCookie: () => string[] }).getSetCookie()
-      : [headers.get("set-cookie") || ""];
-  return values
-    .map((value) => value.split(";", 1)[0])
-    .filter((value) => /^[^=\s]+=[^;]*$/.test(value))
-    .join("; ");
-}
-function lastEpochAssignment(html: string, field: string) {
-  const matches = [
-    ...html.matchAll(
-      new RegExp(`_this\\.${field}\\s*=\\s*(\\d{9,12})\\s*;`, "g"),
-    ),
-  ];
-  return matches.length ? Number(matches.at(-1)![1]) : null;
-}
-function embeddedEvents(html: string) {
-  const assignments = [...html.matchAll(/_this\.events_data\s*=\s*\[/g)];
-  const assignment = assignments.at(-1);
-  const start =
-    assignment?.index == null ? -1 : html.indexOf("[", assignment.index);
-  if (start < 0) return [];
-  let depth = 0;
-  let quoted = false;
-  let escaped = false;
-  for (let index = start; index < html.length; index++) {
-    const char = html[index];
-    if (quoted) {
-      if (escaped) escaped = false;
-      else if (char === "\\") escaped = true;
-      else if (char === '"') quoted = false;
-      continue;
-    }
-    if (char === '"') quoted = true;
-    else if (char === "[") depth++;
-    else if (char === "]" && --depth === 0) {
-      try {
-        const parsed = JSON.parse(html.slice(start, index + 1));
-        return Array.isArray(parsed) ? parsed : [];
-      } catch {
-        throw new Error(
-          "AllEvents изменил формат первой страницы: embedded JSON не читается.",
-        );
-      }
-    }
-  }
-  throw new Error(
-    "AllEvents изменил формат первой страницы: список событий не завершён.",
-  );
-}
-async function readBody(response: Response) {
-  const body = Buffer.from(await response.arrayBuffer());
-  if (body.byteLength > maxBytes)
-    throw new Error("AllEvents вернул ответ больше 20 МБ. Сузьте диапазон.");
-  return body.toString("utf8");
-}
-function requester() {
-  let requested = false;
-  let requestCount = 0;
-  const request = async (url: string, init: RequestInit = {}) => {
-    const statuses: number[] = [];
-    for (;;) {
-      if (requested) await randomPause();
-      requested = true;
-      await validateRemote(url);
-      requestCount++;
-      const response = await fetch(url, {
-        ...init,
-        redirect: "manual",
-        signal: AbortSignal.timeout(45000),
-        headers: {
-          "User-Agent": "ActivityChecker/0.1 (personal local activity catalog)",
-          ...init.headers,
-        },
-      });
-      if (blockStatuses.has(response.status)) {
-        statuses.push(response.status);
-        await response.body?.cancel();
-        if (statuses.length >= 3)
-          throw new Error(
-            `AllEvents остановлен после трёх ответов блокировки (${statuses.join(", ")}). Источник помечен ошибкой; повторите вручную позже.`,
-          );
-        continue;
-      }
-      if (!response.ok) {
-        await response.body?.cancel();
-        throw new Error(`AllEvents ответил HTTP ${response.status}.`);
-      }
-      return response;
-    }
-  };
-  return { request, requestCount: () => requestCount };
-}
-async function connect(ctx: ProviderContext) {
+const connect = (ctx: ProviderContext) => {
   validateSource(ctx);
-  const client = requester();
-  const { request } = client;
-  const response = await request(`${origin}/belgrade/all`, {
-    headers: { Accept: "text/html,application/xhtml+xml" },
-  });
-  const cookie = cookieFrom(response.headers);
-  const html = await readBody(response);
-  const match = html.match(
-    /window\.__cst\s*=\s*(["'])([A-Za-z0-9._-]{20,1000})\1/,
-  );
-  if (!match || !cookie)
-    throw new Error(
-      "AllEvents изменил сессию страницы: не найдены client-state или cookie.",
-    );
-  const embedded = embeddedEvents(html);
-  const startEpoch = lastEpochAssignment(html, "search_sdate");
-  const endEpoch = lastEpochAssignment(html, "search_edate");
-  const pageRange =
-    startEpoch && endEpoch
-      ? {
-          startDate: new Date(startEpoch * 1000).toISOString().slice(0, 10),
-          endDate: new Date(endEpoch * 1000).toISOString().slice(0, 10),
-        }
-      : undefined;
-  return {
-    request,
-    requestCount: client.requestCount,
-    cookie,
-    token: match[2],
-    embedded,
-    embeddedCount: embedded.length,
-    pageRange,
-    pageEpochRange:
-      startEpoch && endEpoch ? { startEpoch, endEpoch } : undefined,
-  };
-}
+  return connectAllEvents();
+};
 function canonicalCategory(tags: string[]) {
   if (tags.some((tag) => /music|concert|party|edm|dance/.test(tag)))
     return "Музыка";
@@ -443,71 +308,27 @@ export function parseAllEventsEvent(
 type Session = Awaited<ReturnType<typeof connect>>;
 type ApiPage = { values: unknown[]; count: number; fingerprint: string };
 
-async function fetchApiPage(
+const fetchApiPage = (
   session: Session,
   ctx: ProviderContext,
   selected: Selection,
   page: number,
   rows: number,
   reuseHtmlRange = false,
-): Promise<ApiPage> {
-  const response = await session.request(endpoint, {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      Cookie: session.cookie,
-      Referer: `${origin}/belgrade/all`,
-      "X-Client-State": session.token,
+): Promise<ApiPage> =>
+  readAllEventsPage(
+    session,
+    {
+      startEpoch: epochAtStart(selected.startDate, ctx.scope.timezone),
+      endEpoch:
+        epochAtStart(addDays(selected.endDate, 1), ctx.scope.timezone) - 1,
+      keyword: ctx.source.keyword,
+      categories: selected.categories,
     },
-    body: JSON.stringify({
-      venue: 0,
-      page,
-      rows,
-      tag_type: "",
-      sdate:
-        reuseHtmlRange && session.pageEpochRange
-          ? session.pageEpochRange.startEpoch
-          : epochAtStart(selected.startDate, ctx.scope.timezone),
-      edate:
-        reuseHtmlRange && session.pageEpochRange
-          ? session.pageEpochRange.endEpoch
-          : epochAtStart(addDays(selected.endDate, 1), ctx.scope.timezone) - 1,
-      city: "belgrade",
-      keywords: ctx.source.keyword || "0",
-      category: selected.categories,
-      formats: 0,
-      sort_by_score_only: true,
-    }),
-  });
-  const raw = await readBody(response);
-  let data: unknown;
-  try {
-    data = JSON.parse(raw);
-  } catch {
-    throw new Error("AllEvents вернул невалидный JSON.");
-  }
-  const parsed = z
-    .object({
-      item: z.array(z.unknown()),
-      count: z.coerce.number().int().nonnegative(),
-    })
-    .passthrough()
-    .safeParse(data);
-  if (!parsed.success)
-    throw new Error("AllEvents изменил формат списка событий.");
-  return {
-    values: parsed.data.item,
-    count: parsed.data.count,
-    fingerprint: parsed.data.item
-      .map((item) =>
-        item && typeof item === "object" && "event_id" in item
-          ? String((item as { event_id: unknown }).event_id)
-          : "?",
-      )
-      .join("|"),
-  };
-}
+    page,
+    rows,
+    reuseHtmlRange,
+  );
 
 async function preparePreview(
   ctx: ProviderContext,

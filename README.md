@@ -2,6 +2,14 @@
 
 Локальный сервис для сбора, нормализации и просмотра событий, ресторанов, сообществ и мест. Начальная география — Белград и Сербия. Приложение рассчитано на одного пользователя: без аккаунтов, фонового обхода сайтов и встроенного LLM. Модель взаимодействует с сервисом снаружи — через локальный API и MCP-инструменты.
 
+## Общие библиотеки и владение данными
+
+Повторно используемые provider-клиенты находятся в соседнем `personal-radar/connectors/`; нужен checkout Personal Radar в стандартном Life Stack layout. [Установка и структура пакетов](../personal-radar/connectors/README.md), [inventory переносов](../personal-radar/docs/connector-inventory.md), [Knowledge/SQLite и future migration](../personal-radar/docs/storage-boundaries.md).
+
+npm использует `file:../personal-radar/connectors/connectors-ts` и именованные импорты `@personal-radar/connectors/...`. Обычные install/dev/start/build/check/test и MCP-команды автоматически собирают библиотеку; при первом setup устанавливаются её lockfile-зависимости. Ручные symlink не нужны.
+
+SQLite-файлы, текущие карточки/профили/оценки и API/MCP/UI контракты сохранены. Долгосрочные отобранные sources/owners/items/preferences принадлежат Personal Radar Knowledge; существующие локальные данные пока не мигрируют. Discovery сохраняет source-кандидатов с identity/provenance/relevance и явным review; подтверждённые источники предназначены для будущего отдельного переноса в Knowledge. Автоматических Knowledge writes/двустороннего sync нет.
+
 ## Быстрое погружение
 
 ### Из чего состоит сервис

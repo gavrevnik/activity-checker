@@ -14,12 +14,18 @@ import belgradeBeat, {
 import afisha, { parseAfishaPage } from "../server/providers/websites/afisha";
 import { fetchText, fetchJson } from "../server/providers/http";
 import type { ProviderContext } from "../server/providers/types";
-vi.mock("../server/providers/http", () => ({
+vi.mock("@personal-radar/connectors/http", () => ({
   fetchText: vi.fn(),
   fetchJson: vi.fn(),
 }));
 let store: Store, ctx: ProviderContext;
 beforeEach(() => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => {
+      throw new Error("Unexpected network request in offline provider test");
+    }),
+  );
   vi.resetAllMocks();
   store = new Store(":memory:");
   ctx = {
@@ -28,7 +34,10 @@ beforeEach(() => {
     secrets: {},
   };
 });
-afterEach(() => store.close());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  store.close();
+});
 function biletPage(
   id = 1,
   venue = "Club, Beograd",
