@@ -150,9 +150,10 @@ it("does not archive during connection tests, planning, non-aggregator sync or o
   await sync.run("source-afisha", true);
   await sync.plan("source-afisha");
   expect(store.entities({ includeFiltered: true })).toHaveLength(1);
-  const nonAggregator = getProvider("overpass");
+  const nonAggregator = getProvider("structured");
   vi.spyOn(nonAggregator, "sync").mockResolvedValue({ items: [] });
-  await sync.run("source-overpass");
+  store.saveSource({providerId: "structured", name: "Fixture", url: "https://venue.test/feed", enabled: true}, "source-structured");
+  await sync.run("source-structured");
   expect(store.entities({ includeFiltered: true })).toHaveLength(1);
   saveAutoArchiveSettings(store, { enabled: false });
   vi.spyOn(aggregator, "sync").mockResolvedValue({ items: [] });
@@ -172,6 +173,8 @@ it("does not fetch when archiving fails and clears the sync lock for a subsequen
   await expect(sync.run("source-afisha")).rejects.toThrow("Archive failure");
   expect(fetch).not.toHaveBeenCalled();
   archive.mockRestore();
-  vi.spyOn(getProvider("bilet"), "sync").mockResolvedValue({ items: [] });
-  await expect(sync.run("source-bilet")).resolves.toMatchObject({ errors: 0 });
+  vi.spyOn(getProvider("tickets"), "sync").mockResolvedValue({ items: [] });
+  await expect(sync.run("source-tickets")).resolves.toMatchObject({
+    errors: 0,
+  });
 });

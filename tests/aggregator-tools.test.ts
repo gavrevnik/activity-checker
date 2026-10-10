@@ -10,10 +10,10 @@ let store: Store;
 beforeEach(() => {store = new Store(":memory:");});
 afterEach(() => {vi.restoreAllMocks(); store.close();});
 describe("shared aggregator MCP handlers", () => {
-  it("reads all six ordinary sources without network requests", () => {
+  it("reads all five ordinary sources without network requests", () => {
     const fetch = vi.spyOn(globalThis,"fetch");
     const result = new AggregatorTools(store).status("belgrade");
-    expect(new Set(result.map(s=>s.providerId))).toEqual(new Set(["tickets","bilet","afisha","serbia-travel","belgrade-beat","allevents"]));
+    expect(new Set(result.map(s=>s.providerId))).toEqual(new Set(["tickets","afisha","serbia-travel","belgrade-beat","allevents"]));
     expect(result.find(s=>s.providerId==="allevents")?.requiresConfirmation).toBe(true);
     expect(fetch).not.toHaveBeenCalled();
   });

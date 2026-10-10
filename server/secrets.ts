@@ -9,7 +9,6 @@ const keys = [
   "TICKETMASTER_API_KEY",
   "FOURSQUARE_API_KEY",
   "GOOGLE_PLACES_API_KEY",
-  "OVERPASS_URL",
 ];
 export function readSecrets(): Record<string, string | undefined> {
   let file: Record<string, string> = {};

@@ -448,7 +448,7 @@ describe("canonical ingestion", () => {
         startAt: "2099-01-01",
       },
       "fest-other",
-      "source-bilet",
+      "source-structured",
     );
     ingest(
       {
@@ -458,7 +458,7 @@ describe("canonical ingestion", () => {
         startAt: "2099-01-01",
       },
       "children",
-      "source-bilet",
+      "source-structured",
     );
     ingest(
       {
@@ -468,7 +468,7 @@ describe("canonical ingestion", () => {
         startAt: "2099-01-01",
       },
       "for-kids",
-      "source-bilet",
+      "source-structured",
     );
     expect(
       store
@@ -571,7 +571,7 @@ describe("canonical ingestion", () => {
         startAt: "2099-05-01T19:00:00+02:00",
       },
       "earlier",
-      "source-bilet",
+      "source-structured",
     );
     expect(store.entities()).toHaveLength(1);
     expect(store.entities()[0].startAt).toBe("2099-05-01T17:00:00.000Z");
@@ -585,7 +585,7 @@ describe("canonical ingestion", () => {
         startAt: "2099-05-04T19:00:00+02:00",
       },
       "other-production",
-      "source-bilet",
+      "source-structured",
     );
     expect(store.entities()).toHaveLength(2);
   });
@@ -608,7 +608,7 @@ describe("canonical ingestion", () => {
         startAt: "2099-06-12T18:00:00+02:00",
       },
       "candidate-b",
-      "source-bilet",
+      "source-structured",
     );
     const [firstId, secondId] = store
       .entities()
@@ -752,28 +752,9 @@ describe("canonical ingestion", () => {
     expect(() =>
       store.saveSource(
         { providerId: "telegram", name: "changed" },
-        "source-overpass",
+        "source-structured",
       ),
     ).toThrow();
-  });
-  it("purges OpenStreetMap records and disables the source in migration 008", () => {
-    ingest(place, "node/1", "source-overpass");
-    expect(store.entities()).toHaveLength(1);
-    store.db
-      .prepare("DELETE FROM migrations WHERE name=?")
-      .run("008_purge_openstreetmap_data.sql");
-
-    store.migrate();
-
-    expect(store.entities()).toHaveLength(0);
-    expect(
-      store.db
-        .prepare(
-          "SELECT COUNT(*) AS count FROM source_items WHERE sourceId='source-overpass'",
-        )
-        .get(),
-    ).toMatchObject({ count: 0 });
-    expect(store.source("source-overpass").enabled).toBe(false);
   });
   it("merges existing Tickets.rs series in migration 009", () => {
     vi.useFakeTimers({ toFake: ["Date"] });

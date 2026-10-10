@@ -1175,10 +1175,6 @@ main {
   border-radius: 8px;
   color: #6d7c59;
 }
-.provider-mark.overpass {
-  background: #e8f0e0;
-  color: #81995e;
-}
 .provider-mark.telegram,
 .provider-mark.facebook-apify {
   background: #edf1f7;

@@ -1,11 +1,6 @@
 import { beforeEach, afterEach, describe, it, expect, vi } from "vitest";
 import { Store } from "../server/store";
-import { parseStructured } from "../server/providers/structured";
-import {
-  overpass,
-  overpassQuery,
-  normalizeOSM,
-} from "../server/providers/overpass";
+import { parseStructured, structured } from "../server/providers/structured";
 import { getProvider, providers } from "../server/providers/registry";
 import { canonicalUrl } from "../server/normalize";
 import { entitySchema } from "../shared/model";
@@ -27,10 +22,15 @@ const context = () => ({
   scope: store.scope("belgrade"),
   secrets: {},
 });
-function enableOverpass() {
-  const source = store.source("source-overpass");
+function enableStructured() {
+  const source = store.source("source-structured");
   store.saveSource(
-    { providerId: source.providerId, name: source.name, enabled: true },
+    {
+      providerId: source.providerId,
+      name: source.name,
+      url: "https://venue.test/feed",
+      enabled: true,
+    },
     source.id,
   );
 }
@@ -134,13 +134,11 @@ describe("providers", () => {
         providers.map((provider) => [provider.id, provider.configFields]),
       ),
     ).toEqual({
-      overpass: ["scope"],
       ticketmaster: ["scope", "keyword"],
       structured: ["scope", "url", "format"],
       manual: [],
       "belgrade-beat": [],
       afisha: ["url"],
-      bilet: ["scope", "url", "keyword"],
       tickets: ["url", "keyword"],
       "serbia-travel": ["scope", "url", "keyword"],
       allevents: ["url", "keyword"],
@@ -157,23 +155,12 @@ describe("providers", () => {
       predicthq: [],
     });
   });
-  it("allows direct sync of legacy disabled sources without an enable toggle", () => {
-    const source = store.source("source-overpass");
-    expect(source.enabled).toBe(false);
-    const state = overpass.connectionStatus({
-      source,
-      scope: store.scope("belgrade"),
-      secrets: {},
-    });
-    expect(state.status).toBe("ready");
-    expect(state.canSync).toBe(true);
-  });
   it("runs ordinary API aggregators globally without using the legacy enabled flag", async () => {
-    const selected = ["afisha", "belgrade-beat", "bilet", "tickets"];
+    const selected = ["afisha", "belgrade-beat", "tickets"];
     const syncMocks = selected.map((id) =>
       vi.spyOn(getProvider(id), "sync").mockResolvedValue({ items: [] }),
     );
-    const excludedMocks = ["overpass", "telegram"].map((id) =>
+    const excludedMocks = ["ticketmaster", "telegram"].map((id) =>
       vi.spyOn(getProvider(id), "sync").mockResolvedValue({ items: [] }),
     );
     const result = await new SyncService(store).all("belgrade");
@@ -188,34 +175,6 @@ describe("providers", () => {
     expect(getProvider("ticketmaster").connectionStatus(ctx).status).toBe(
       "not_configured",
     );
-  });
-  it("normalizes OSM POIs and builds correct area query", () => {
-    const ctx = context();
-    expect(overpassQuery(ctx)).toContain("area(3602728438)");
-    const value = normalizeOSM(
-      {
-        externalId: "node/1",
-        url: "https://www.openstreetmap.org/node/1",
-        rawText: "",
-        payload: {
-          id: 1,
-          type: "node",
-          lat: 44.81,
-          lon: 20.46,
-          tags: {
-            name: "Скалодром",
-            sport: "climbing",
-            website: "example.test",
-            "addr:city": "Београд",
-          },
-        },
-      },
-      ctx,
-    )!;
-    expect(value.category).toBe("Спорт");
-    expect(value.knownIds.osm).toBe("node/1");
-    expect(value.website).toBe("https://example.test");
-    expect(entitySchema.safeParse(value).success).toBe(true);
   });
   it("extracts nested schema.org events and retains original payload", () => {
     const ctx = context();
@@ -304,28 +263,31 @@ describe("providers", () => {
     expect(isPrivateAddress("1.1.1.1")).toBe(false);
   });
   it("records a sync and persists cooldown", async () => {
-    enableOverpass();
-    vi.spyOn(overpass, "sync").mockResolvedValue({
+    enableStructured();
+    vi.spyOn(structured, "sync").mockResolvedValue({
       items: [
         {
           externalId: "node/1",
-          url: "https://www.openstreetmap.org/node/1",
+          url: "https://venue.test/place/1",
           rawText: "",
           payload: {
-            id: 1,
-            type: "node",
-            tags: { name: "Gym", sport: "climbing" },
+            normalized: {
+              type: "Place",
+              title: "Gym",
+              country: "RS",
+              city: "Belgrade",
+            },
           },
         },
       ],
     });
     const sync = new SyncService(store);
-    const r = await sync.run("source-overpass");
+    const r = await sync.run("source-structured");
     expect(r).toMatchObject({ fetched: 1, created: 1, errors: 0 });
     expect(sync.runs()[0].status).toBe("success");
-    await expect(new SyncService(store).run("source-overpass")).rejects.toThrow(
-      "сек.",
-    );
+    await expect(
+      new SyncService(store).run("source-structured"),
+    ).rejects.toThrow("сек.");
   });
   it("drops past events returned by a local listing before ingestion", async () => {
     const source = store.source("source-afisha");
@@ -378,13 +340,13 @@ describe("providers", () => {
     );
   });
   it("persists provider failures with no fabricated records", async () => {
-    enableOverpass();
-    vi.spyOn(overpass, "sync").mockRejectedValue(new Error("HTTP 429"));
+    enableStructured();
+    vi.spyOn(structured, "sync").mockRejectedValue(new Error("HTTP 429"));
     const sync = new SyncService(store);
-    await expect(sync.run("source-overpass")).rejects.toThrow("HTTP 429");
+    await expect(sync.run("source-structured")).rejects.toThrow("HTTP 429");
     expect(store.entities()).toHaveLength(0);
     expect(sync.runs()[0].status).toBe("error");
-    expect(store.source("source-overpass").lastError).toBe("HTTP 429");
+    expect(store.source("source-structured").lastError).toBe("HTTP 429");
   });
 });
 it("refreshes credential presence without leaking its value", () => {

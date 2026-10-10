@@ -556,7 +556,7 @@ export class Store {
           url: p.defaultUrl || "",
           scopeId: p.id === "serbia-travel" ? "serbia" : "belgrade",
           enabled: ["manual", "allevents", "telegram"].includes(p.id),
-          priority: p.id === "overpass" ? 100 : p.id === "manual" ? 90 : 50,
+          priority: p.id === "manual" ? 90 : 50,
           language: p.id === "afisha" ? "ru" : "",
         },
         "source-" + p.id,
@@ -924,7 +924,7 @@ export class Store {
           let aggressiveEventMatch = false;
           const matches = this.db
             .prepare(
-              "SELECT DISTINCT e.* FROM entities e JOIN entity_source_links l ON l.entityId=e.id JOIN source_items i ON i.id=l.sourceItemId JOIN sources s ON s.id=i.sourceId WHERE s.providerId=? AND (s.id=? OR s.providerId IN ('overpass','ticketmaster')) AND i.externalId=? AND e.type=? AND e.country=? AND json_extract(e.data,'$.demo')=?",
+              "SELECT DISTINCT e.* FROM entities e JOIN entity_source_links l ON l.entityId=e.id JOIN source_items i ON i.id=l.sourceItemId JOIN sources s ON s.id=i.sourceId WHERE s.providerId=? AND (s.id=? OR s.providerId = 'ticketmaster') AND i.externalId=? AND e.type=? AND e.country=? AND json_extract(e.data,'$.demo')=?",
             )
             .all(
               source.providerId,
@@ -1282,7 +1282,7 @@ export class Store {
       }
       if (
         /\.(png|jpe?g|webp|gif|svg|woff2?)$/i.test(u.pathname) ||
-        ["schema.org", "www.schema.org", "openstreetmap.org"].includes(
+        ["schema.org", "www.schema.org"].includes(
           u.hostname,
         )
       )

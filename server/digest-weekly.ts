@@ -93,7 +93,7 @@ export class DigestWeekly {
     const factChanges = prior ? changed(JSON.parse(prior.facts), current) : baseline ? changed(baseline.facts, current) : [];
     // fetchedAt and updatedAt are not publication dates; ordinary sync/score refreshes cannot make a card new.
     const freshness = kind === "telegram" ? inWindow(event.publishedAt) ? "new_telegram_post" : factChanges.length ? "changed_event_facts" : textChanged ? "changed_source_text" : "old_announcement" :
-      factChanges.length ? "changed_event_facts" : textChanged ? "changed_source_text" : inWindow(event.createdAt) || (!baseline && Date.parse(event.createdAt) >= Date.parse(run.windowEnd)) ? event.sources?.some(s => ["tickets","bilet","afisha","belgrade-beat","serbia-travel","allevents"].includes(s.providerId)) ? "first_api_discovery" : "first_web_discovery" : "old_announcement";
+      factChanges.length ? "changed_event_facts" : textChanged ? "changed_source_text" : inWindow(event.createdAt) || (!baseline && Date.parse(event.createdAt) >= Date.parse(run.windowEnd)) ? event.sources?.some(s => ["tickets","afisha","belgrade-beat","serbia-travel","allevents"].includes(s.providerId)) ? "first_api_discovery" : "first_web_discovery" : "old_announcement";
     return { kind, id: event.id, event, aliases: aliases(kind, event), facts: current, sourceTextHash, freshness, factChanges, eligible: freshness !== "old_announcement" };
   }
   candidates(input: z.input<typeof digestWeeklyCandidatesSchema>) {

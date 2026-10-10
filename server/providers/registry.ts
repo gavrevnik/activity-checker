@@ -1,11 +1,9 @@
-import { overpass } from "./overpass.js";
 import { ticketmaster } from "./ticketmaster.js";
 import { manual } from "./manual.js";
 import { structured } from "./structured.js";
 import { catalog } from "./catalog.js";
 import belgradeBeat from "./websites/belgrade-beat.js";
 import afisha from "./websites/afisha.js";
-import bilet from "./websites/bilet.js";
 import tickets from "./websites/tickets.js";
 import serbiaTravel from "./websites/serbia-travel.js";
 import allEvents from "./websites/allevents.js";
@@ -15,13 +13,11 @@ import { foursquare } from "./foursquare/provider.js";
 import { googlePlacesApi } from "./google-places/provider.js";
 import type { ActivityProvider } from "./types.js";
 export const providers: ActivityProvider[] = [
-  overpass,
   ticketmaster,
   structured,
   manual,
   belgradeBeat,
   afisha,
-  bilet,
   tickets,
   serbiaTravel,
   allEvents,

@@ -256,7 +256,7 @@ export function Detail({
             )}
             {entity.latitude != null && entity.longitude != null && (
               <External
-                href={`https://www.openstreetmap.org/?mlat=${entity.latitude}&mlon=${entity.longitude}#map=17/${entity.latitude}/${entity.longitude}`}
+                href={`https://www.google.com/maps/search/?api=1&query=${entity.latitude},${entity.longitude}`}
               >
                 На карте
               </External>
