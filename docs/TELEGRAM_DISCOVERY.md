@@ -160,9 +160,9 @@ posts, счётчики, `truncated` и `nextBeforeMessageId`, плюс `sourceC
 `noLinkedChat` — у канала нет связи; `linkedChatExcluded` — связанный чат исключён
 настройками по username или известному стабильному ID. Недоступность возвращается
 через warnings, а не маскируется как пустое неактивное обсуждение.
-В явном исследовании темы/диалога ответы включены даже при `excludeReplies=true`
+В явном исследовании темы/диалога ответы исключаются общей политикой `excludeReplies=true`
 в ленте: иначе исчезла бы сама переписка. Настройки не изменяются, исключения каналов,
-рекламных disclosures и keywords сохраняются. Pins остаются отдельным исключением.
+рекламных disclosures и keywords сохраняются. Pins используют те же фильтры и переданные даты.
 Обсуждение как отдельный кандидат требует собственной проверки размера/языка,
 дедупликации и подтверждения добавления. Размер исходного канала не переносится на чат.
 
@@ -185,4 +185,4 @@ MCP память пользовательских вкусов не изменя
 
 ## Единый API и batch 50
 
-[Telegram Connector](../../personal-radar/docs/telegram-connector.md) сохраняет прежние schemas и physical tools. Для logical read до 50 каналов использовать `telegram_batch_read` с requestId/execute=true; сначала plan, после потери ответа — `telegram_batch_result` без RPC. Сохранять independent cursors; watermark только complete. Respect FloodWait/hasUnread, не переисполнять unknown без human retryUnknown. Pins не фильтровать правилами ленты, discussion replies не исключать. Новая выдача — universal DTO/journal, не автоматический Community/Event import и не Knowledge write.
+[Telegram Connector](../../personal-radar/docs/telegram-connector.md) сохраняет прежние schemas и physical tools. Для logical read до 50 каналов использовать `telegram_batch_read` с requestId/execute=true; сначала plan, после потери ответа — `telegram_batch_result` без RPC. Сохранять independent cursors; watermark только complete. Respect FloodWait/hasUnread, не переисполнять unknown без human retryUnknown. Pins и discussion reads используют общий фильтр replies/ads/minTextLength≥51 и включительные даты. Новая выдача — universal DTO/journal, не автоматический Community/Event import и не Knowledge write.
