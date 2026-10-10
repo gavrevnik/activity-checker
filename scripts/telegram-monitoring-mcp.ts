@@ -83,12 +83,12 @@ server.registerTool(
     inputSchema: {
       channels: z
         .array(z.string().trim().min(1).max(200))
-        .max(20)
+        .max(50)
         .default([])
         .describe("Public @usernames or t.me URLs."),
       communityIds: z
         .array(z.string().trim().min(1).max(200))
-        .max(20)
+        .max(50)
         .default([])
         .describe(
           "Activity Checker Community IDs returned by telegram_monitoring_channels.",
@@ -97,7 +97,7 @@ server.registerTool(
         .boolean()
         .default(false)
         .describe(
-          "Select every visible stored Telegram community; fails if there are more than 20 so callers can batch deliberately.",
+          "Select every visible stored Telegram community; fails if there are more than 50 so callers can batch deliberately.",
         ),
       startDate: z.iso
         .date()
@@ -130,17 +130,17 @@ server.registerTool(
           "Per-channel exclusive pagination cursors for older history.",
         ),
       minViews: z.number().int().min(0).default(0),
-      minTextLength: z.number().int().min(0).max(20_000).default(0),
+      minTextLength: z.number().int().min(51).max(20_000).default(51),
       excludeForwards: z.boolean().default(false),
       excludeReplies: z
-        .boolean()
+        .literal(true)
         .optional()
         .describe(
           "Skip reply messages/comments, not posts that merely have comments.",
         ),
       excludeMediaOnly: z.boolean().default(false),
       excludeAdDisclosures: z
-        .boolean()
+        .literal(true)
         .optional()
         .describe(
           "Enabled by default: exclude explicit ad hashtags, disclosure phrases and erid identifiers. Prices/discounts alone are not ads. Custom keywords, hashtags and link domains can refine the deterministic filter.",

@@ -220,11 +220,21 @@ async function research(mode: keyof typeof researchInputs, input: unknown) {
       ...(contextArgs
         ? {
             // Explicit discussion research includes replies without changing feed preferences.
-            excludeReplies: false,
+            excludeReplies: true,
+            minTextLength: settings.minTextLength,
             excludeKeywords: settings.excludeKeywords,
             excludeAdDisclosures: settings.excludeAdDisclosures,
           }
         : {}),
+      minTextLength: settings.minTextLength,
+      excludeReplies: true,
+      excludeAdDisclosures: true,
+      excludeKeywords: [
+        ...new Set([
+          ...settings.excludeKeywords,
+          ...((args as { excludeKeywords?: string[] }).excludeKeywords ?? []),
+        ]),
+      ],
       excludedUsernames: settings.excludedChannels,
       excludedChannelIds: ["linked_posts", "comments"].includes(mode)
         ? excludedTelegramIds(settings.excludedChannels)

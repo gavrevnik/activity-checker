@@ -152,20 +152,37 @@ describe("saved Telegram monitoring policy", () => {
       }),
     );
   });
-  it("allows users to unblock channels and disable optional exclusions in settings", async () => {
+  it("accepts 50 monitoring channels and refuses the 51st before worker calls", async () => {
+    const channels = Array.from({ length: 50 }, (_, i) => `source${i}`);
+    await monitorTelegramChannelPosts({ channels });
+    expect(monitorTelegramChannels).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        channels,
+        minTextLength: 51,
+        excludeReplies: true,
+        excludeAdDisclosures: true,
+      }),
+    );
+    const calls = vi.mocked(monitorTelegramChannels).mock.calls.length;
+    await expect(
+      monitorTelegramChannelPosts({ channels: [...channels, "source50"] }),
+    ).rejects.toThrow("50");
+    expect(vi.mocked(monitorTelegramChannels).mock.calls).toHaveLength(calls);
+  });
+  it("allows source unblocking while preserving mandatory reply/ad exclusions", async () => {
     saveTelegramMonitoringSettings(store.db, {
       excludedChannels: [],
       excludeKeywords: [],
-      excludeReplies: false,
-      excludeAdDisclosures: false,
+      excludeReplies: true,
+      excludeAdDisclosures: true,
     });
     await monitorTelegramChannelPosts({ communityIds: [blockedId] });
     expect(monitorTelegramChannels).toHaveBeenCalledWith(
       expect.objectContaining({
         channels: ["serbia_padel"],
         excludeKeywords: [],
-        excludeReplies: false,
-        excludeAdDisclosures: false,
+        excludeReplies: true,
+        excludeAdDisclosures: true,
       }),
     );
   });

@@ -62,7 +62,7 @@ const source = (target: string): TelegramChannelResult => {
         id: "10",
         channelId: id,
         username: target,
-        text: "Fixture",
+        text: "Fixture with sufficient details for the shared Telegram filtering policy.",
         date: "2026-10-10T00:00:00Z",
       },
     ],
@@ -285,8 +285,8 @@ it("per-source overrides cannot remove saved Activity policy", async () => {
         bravo: {
           filters: {
             excludeKeywords: [],
-            excludeReplies: false,
-            excludeAdDisclosures: false,
+            excludeReplies: true,
+            excludeAdDisclosures: true,
           },
         },
       },

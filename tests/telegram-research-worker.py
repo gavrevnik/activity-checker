@@ -18,7 +18,7 @@ stamp = datetime(2026, 10, 1, 10, tzinfo=timezone.utc)
 chat = types.Channel(id=1, title="Test", photo=types.ChatPhotoEmpty(), date=stamp,
                      username="testchannel", megagroup=True, forum=True)
 def message(id, **kwargs):
-    return types.Message(id=id, peer_id=types.PeerChannel(1), date=stamp, message="Открытая встреча", **kwargs)
+    return types.Message(id=id, peer_id=types.PeerChannel(1), date=stamp, message="Открытая встреча с подробным описанием времени, места и условий участия.", **kwargs)
 
 class FakeClient:
     def __init__(self, replies, source=chat, linked=None, history=None):
@@ -61,10 +61,10 @@ def topic(id, title, top, **kwargs):
 
 async def tests():
     old = message(1, pinned=True); old.date = datetime(2020, 1, 1, tzinfo=timezone.utc)
-    old.message = "#реклама правила группы"  # pins must not be lost to feed filters
+    old.message = "#реклама правила группы " + "подробные правила " * 4  # common ad policy also applies to pins
     result, requests = await run("pinned", [page([old], 1)])
     row = result["channels"][0]
-    assert row["posts"][0]["date"].startswith("2020") and not row["truncated"]
+    assert row["posts"] == [] and not row["truncated"]
     assert isinstance(requests[0], functions.messages.SearchRequest)
     assert isinstance(requests[0].filter, types.InputMessagesFilterPinned)
     assert requests[0].q == "" and requests[0].min_date is None and requests[0].max_date is None
@@ -117,12 +117,12 @@ async def tests():
     result, requests = await run("topics", [], source=plain)
     assert not result["channels"][0]["isForum"] and not requests and result["requestCount"] == 1
 
-    # Selected topic replies remain readable even with feed excludeReplies enabled.
+    # Selected topic replies are excluded by the common policy.
     reply = message(99, reply_to=types.MessageReplyHeader(reply_to_msg_id=42, forum_topic=True))
     ad = message(98); ad.message = "#реклама рассылка"
     result, requests = await run("topic_posts", [page([reply, ad], 2)], topicId="42", excludeReplies=True)
     assert isinstance(requests[0], functions.messages.GetRepliesRequest) and requests[0].msg_id == 42
-    assert result["channels"][0]["returnedCount"] == 1 and result["channels"][0]["posts"][0]["id"] == "99"
+    assert result["channels"][0]["returnedCount"] == 0
     # Context pagination advances across service messages and returns a safe cursor.
     result, requests = await run("topic_posts", [page([service] + [message(i) for i in range(19, 10, -1)], 11),
         page([message(10)], 11)], topicId="42", maxMessagesPerChannel=10)
@@ -150,7 +150,7 @@ async def tests():
     result, requests = await run("linked_posts", [private_full], source=source, linked=private, history=[[reply]])
     row = result["channels"][0]
     assert row["channel"]["id"] == "2" and row["sourceChannel"]["id"] == "1"
-    assert row["posts"][0]["url"] == "https://t.me/c/2/99" and row["status"] == "available"
+    assert row["posts"] == [] and row["status"] == "available"
 
     # A channel post and the auto-forwarded chat root have DIFFERENT IDs.
     root = types.Message(id=700, peer_id=types.PeerChannel(2), date=stamp, message="Анонс",
@@ -160,7 +160,7 @@ async def tests():
     row = result["channels"][0]
     assert isinstance(requests[1], functions.messages.GetDiscussionMessageRequest) and requests[1].msg_id == 25
     assert isinstance(requests[2], functions.messages.GetRepliesRequest) and requests[2].msg_id == 700 and requests[2].peer is linked
-    assert row["discussionRootId"] == "700" and row["posts"][0]["url"] == "https://t.me/linkedchat/99"
+    assert row["discussionRootId"] == "700" and row["posts"] == []
     root.fwd_from.from_id = types.PeerChannel(777)
     try:
         await run("comments", [full_result, page([root])], source=source, linked=linked, postId="25")
@@ -172,7 +172,7 @@ async def tests():
         raise AssertionError("FloodWait must abort")
     except base.WorkerError as exc:
         assert exc.code == "flood_wait" and exc.details["retryAfterSeconds"] == 12
-    for payload in [{"mode": "search", "query": ""}, {"mode": "pinned", "startDate": "2026-10-01"},
+    for payload in [{"mode": "search", "query": ""}, {"mode": "pinned", "startDate": "2026-10-02", "endDate":"2026-10-01"},
                     {"mode": "search", "query": "x", "topicId": "-1"}, {"mode": "pinned", "delaySeconds": 0},
                     {"mode": "topic_posts"}, {"mode": "comments", "postId": "2147483648"},
                     {"mode": "topics", "maxTopicsPerChannel": 101},

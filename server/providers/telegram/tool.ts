@@ -292,9 +292,9 @@ export async function monitorTelegramChannelPosts(input: {
         note: "Все каналы исключены; запросов к Telegram не было.",
       },
     };
-  if (channels.length > 20)
+  if (channels.length > 50)
     throw new Error(
-      `За один monitoring batch допустимо до 20 каналов; выбрано ${channels.length}. Разбейте список на batch.`,
+      `За один monitoring batch допустимо до 50 каналов; выбрано ${channels.length}. Разбейте список на batch.`,
     );
   const secrets = requiredSecrets();
   const {
@@ -310,9 +310,9 @@ export async function monitorTelegramChannelPosts(input: {
         ...(input.excludeKeywords || []),
       ]),
     ],
-    excludeReplies: settings.excludeReplies || Boolean(input.excludeReplies),
-    excludeAdDisclosures:
-      settings.excludeAdDisclosures || Boolean(input.excludeAdDisclosures),
+    minTextLength: Math.max(settings.minTextLength, input.minTextLength ?? 51),
+    excludeReplies: true,
+    excludeAdDisclosures: true,
     channels,
     apiId: secrets.TELEGRAM_API_ID!,
     apiHash: secrets.TELEGRAM_API_HASH!,

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import defaults from "../data/telegram-monitoring-filters.json";
+import { telegramPolicy } from "@personal-radar/connectors/telegram";
 import type { Entity } from "./model.js";
 
 import { telegramUsername } from "@personal-radar/connectors/telegram";
@@ -14,13 +14,19 @@ const terms = z
 export const telegramMonitoringSettingsSchema = z
   .object({
     excludeKeywords: terms,
+    minTextLength: z
+      .number()
+      .int()
+      .min(telegramPolicy.minTextLength)
+      .max(20000)
+      .default(telegramPolicy.minTextLength),
     excludedChannels: z
       .array(z.string().trim().min(1).max(200))
       .max(1000)
       .transform((values) => [...new Set(values.map(telegramUsername))])
       .pipe(z.array(z.string().regex(/^[a-z0-9_]+$/))),
-    excludeReplies: z.boolean(),
-    excludeAdDisclosures: z.boolean(),
+    excludeReplies: z.literal(true),
+    excludeAdDisclosures: z.literal(true),
   })
   .strict();
 export type TelegramMonitoringSettings = z.output<
@@ -28,7 +34,7 @@ export type TelegramMonitoringSettings = z.output<
 >;
 export const defaultTelegramMonitoringSettings =
   (): TelegramMonitoringSettings => ({
-    excludeKeywords: [...defaults.excludeKeywords],
+    excludeKeywords: [...telegramPolicy.excludeKeywords],
     excludedChannels: [
       "serbia_padel",
       "quizpleasebeg",
@@ -36,6 +42,7 @@ export const defaultTelegramMonitoringSettings =
       "serbia",
       "russkydombelgrad",
     ],
+    minTextLength: telegramPolicy.minTextLength,
     excludeReplies: true,
     excludeAdDisclosures: true,
   });

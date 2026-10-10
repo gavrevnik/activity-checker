@@ -90,39 +90,36 @@ export function TelegramMonitoringSettings({
               выражение.
             </small>
             <label>
-              <input
-                type="checkbox"
-                disabled={saving}
-                checked={view.settings.excludeReplies}
-                onChange={(event) =>
-                  setView({
-                    ...view,
-                    settings: {
-                      ...view.settings,
-                      excludeReplies: event.target.checked,
-                    },
-                  })
-                }
-              />{" "}
-              Исключать ответы / комментарии
+              <input type="checkbox" checked disabled /> Исключать ответы /
+              комментарии
             </label>
             <label>
+              <input type="checkbox" checked disabled /> Исключать явную рекламу
+              (#реклама, #ad, erid)
+            </label>
+            <label>
+              Минимум символов текста
               <input
-                type="checkbox"
+                type="number"
+                min={51}
+                max={20000}
+                value={view.settings.minTextLength}
                 disabled={saving}
-                checked={view.settings.excludeAdDisclosures}
                 onChange={(event) =>
                   setView({
                     ...view,
                     settings: {
                       ...view.settings,
-                      excludeAdDisclosures: event.target.checked,
+                      minTextLength: Number(event.target.value),
                     },
                   })
                 }
-              />{" "}
-              Исключать явную рекламу (#реклама, #ad, erid)
+              />
             </label>
+            <small>
+              Общие правила всех Telegram API: ответы и реклама исключены, текст
+              длиннее 50 символов. Минимальную длину можно увеличить.
+            </small>
             <h3>Не мониторить каналы</h3>
             <p>
               Отмеченные каналы пропускаются полностью: запросов к Telegram по

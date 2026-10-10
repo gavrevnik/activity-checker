@@ -11,18 +11,18 @@ from personal_radar_connectors.telegram import worker as worker
 worker.MONITORING_FILTERS={"excludeKeywords":["blocked test phrase"]}
 stamp = datetime(2026, 10, 1, 10, tzinfo=timezone.utc)
 
-def message(id, text="Открытая встреча, 1000 RSD", **kwargs):
+def message(id, text="Открытая встреча, 1000 RSD, с подробным описанием места, времени и условий участия.", **kwargs):
     return types.Message(id=id, peer_id=types.PeerChannel(1), date=stamp, message=text, **kwargs)
 
 args = worker.validate_monitor_input({"channels": ["testchannel"]})
 assert args["excludeReplies"] and args["excludeAdDisclosures"]
 for text in ["#реклама", "#ad", "erid: ABC123", "на правах рекламы"]:
-    assert worker.excluded_reason(worker.monitoring_post(message(1, text), "testchannel"), args) == "adDisclosure", text
+    assert worker.excluded_reason(worker.monitoring_post(message(1, text + " Synthetic details " * 4), "testchannel"), args) == "adDisclosure", text
 for text in ["Встреча: скидка 10%, билеты 1000 RSD", "#adventure #рекламатика"]:
-    assert worker.excluded_reason(worker.monitoring_post(message(1, text), "testchannel"), args) is None, text
+    assert worker.excluded_reason(worker.monitoring_post(message(1, text + " Synthetic details " * 4), "testchannel"), args) is None, text
 reply = message(1, reply_to=types.MessageReplyHeader(reply_to_msg_id=9))
 for text in worker.MONITORING_FILTERS["excludeKeywords"]:
-    assert worker.excluded_reason(worker.monitoring_post(message(1, text.upper()), "testchannel"), args) == "keyword"
+    assert worker.excluded_reason(worker.monitoring_post(message(1, text.upper() + " Synthetic details " * 4), "testchannel"), args) == "keyword"
 assert not worker.validate_monitor_input({"channels": ["testchannel"], "excludeKeywords": []})["excludeKeywords"]
 assert worker.excluded_reason(worker.monitoring_post(reply, "testchannel"), args) == "reply"
 post_with_comments = message(1, replies=types.MessageReplies(replies=20, replies_pts=1, comments=True))

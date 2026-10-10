@@ -114,13 +114,12 @@ export async function executeTelegramBatchRead(
           settings.excludeAdDisclosures ||
           base.excludeAdDisclosures ||
           local.excludeAdDisclosures,
-        excludeReplies: ["topicPosts", "comments", "linkedPosts"].includes(
-          request.operation,
-        )
-          ? false
-          : settings.excludeReplies ||
-            base.excludeReplies ||
-            local.excludeReplies,
+        excludeReplies: true,
+        minTextLength: Math.max(
+          settings.minTextLength,
+          base.minTextLength,
+          local.minTextLength,
+        ),
       };
     };
     const root = (request.options as { filters?: unknown }).filters;

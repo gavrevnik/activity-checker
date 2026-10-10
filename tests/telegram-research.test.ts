@@ -70,7 +70,7 @@ describe("Telegram channel-scoped research", () => {
         expect.objectContaining({
           excludedChannelIds: ["2"],
           excludedUsernames: expect.arrayContaining(["quizpleasebeg"]),
-          excludeReplies: false,
+          excludeReplies: true,
           excludeAdDisclosures: true,
           excludeKeywords: expect.any(Array),
         }),
@@ -199,7 +199,7 @@ describe("Telegram channel-scoped research", () => {
       ).toContain("passed");
     },
   );
-  it("rejects unbounded/global targets and dates for pins", () => {
+  it("rejects unbounded/global targets and accepts date-bound pins", () => {
     for (const channels of [
       [],
       ["https://t.me/channelname/123"],
@@ -231,7 +231,7 @@ describe("Telegram channel-scoped research", () => {
         channels: ["channelname"],
         startDate: "2026-10-01",
       }).success,
-    ).toBe(false);
+    ).toBe(true);
     expect(
       pinnedInputSchema.parse({ channels: ["channelname"] }).delaySeconds,
     ).toBe(4);

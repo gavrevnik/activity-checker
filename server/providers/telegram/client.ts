@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createTelegramClient } from "@personal-radar/connectors/telegram/local";
 import { LazyTelegramBatchStore } from "./batch-store.js";
-import monitoringFilters from "../../../data/telegram-monitoring-filters.json" with { type: "json" };
+import { telegramPolicy } from "@personal-radar/connectors/telegram";
 export * from "@personal-radar/connectors/telegram";
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 export const {
@@ -26,5 +26,5 @@ export const {
     root,
     "../data/activity-checker/telegram/activity-checker",
   ),
-  excludeKeywords: monitoringFilters.excludeKeywords,
+  excludeKeywords: [...telegramPolicy.excludeKeywords],
 });

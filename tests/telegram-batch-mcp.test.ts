@@ -24,7 +24,7 @@ rows=[]
 for target in request['targets']:
     match=re.search(r'\\d+$',target)
     identifier=str(int(match.group())+1 if match else 1)
-    rows.append({'target':target,'status':'complete','channel':{'id':identifier,'title':target,'username':target,'url':'https://t.me/'+target,'broadcast':True,'megagroup':False,'verified':False,'participantsCount':None},'messages':[{'id':'10','channelId':identifier,'username':target,'text':'Synthetic fixture','date':'2026-10-10T00:00:00Z'}],'cursor':None,'watermarkCandidate':'10','scannedCount':1,'filteredCount':0,'filterBreakdown':{},'metadata':{}})
+    rows.append({'target':target,'status':'complete','channel':{'id':identifier,'title':target,'username':target,'url':'https://t.me/'+target,'broadcast':True,'megagroup':False,'verified':False,'participantsCount':None},'messages':[{'id':'10','channelId':identifier,'username':target,'text':'Synthetic fixture with sufficient details for the shared Telegram filtering policy.','date':'2026-10-10T00:00:00Z'}],'cursor':None,'watermarkCandidate':'10','scannedCount':1,'filteredCount':0,'filterBreakdown':{},'metadata':{}})
 print(json.dumps({'ok':True,'status':'complete','requestCount':len(rows),'channels':rows,'warnings':[]}))
 `,
   );
