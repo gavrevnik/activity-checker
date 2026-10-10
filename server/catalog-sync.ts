@@ -5,7 +5,7 @@ import {
   catalogStatus,
   catalogLinks,
   setCatalogInterest,
-} from "../../personal-radar/catalog_sync/node.js";
+} from "@personal-radar/connectors/catalog-sync";
 export function registerCatalogApi(app: Express, store: Store) {
   app.get("/api/catalog", (_req, res) =>
     res.json({ ...catalogStatus(store.db), links: catalogLinks(store.db) }),

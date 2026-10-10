@@ -4,7 +4,7 @@ import {
   catalogLinks,
   catalogStatus,
   setCatalogInterest,
-} from "../../personal-radar/catalog_sync/node";
+} from "@personal-radar/connectors/catalog-sync";
 it("stores explicit source interest atomically without changing event reactions or monitoring", () => {
   const store = new Store(":memory:");
   try {

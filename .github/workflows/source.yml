@@ -1,0 +1,29 @@
+name: Source checks
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: |
+          python - <<'PYCODE'
+          import json,pathlib
+          root=pathlib.Path('.')
+          package=json.loads((root/'package.json').read_text())
+          lock=json.loads((root/'package-lock.json').read_text())
+          dependency=package['dependencies']['@personal-radar/connectors']
+          assert dependency == 'file:../personal-radar/connectors/connectors-ts'
+          assert lock['packages']['']['dependencies']['@personal-radar/connectors'] == dependency
+          assert lock['packages']['node_modules/@personal-radar/connectors']['link'] is True
+          print('Package dependency metadata OK; complete tests run in private Radar integration CI')
+          PYCODE

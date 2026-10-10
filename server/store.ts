@@ -1,4 +1,4 @@
-import { enqueueCatalogFeedback } from "../../personal-radar/catalog_sync/node.js";
+import { enqueueCatalogFeedback } from "@personal-radar/connectors/catalog-sync";
 import { DatabaseSync } from "node:sqlite";
 import { normalizePersonalStatePatch } from "../shared/personal-state.js";
 import { randomUUID } from "node:crypto";

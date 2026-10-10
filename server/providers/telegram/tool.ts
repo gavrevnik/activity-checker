@@ -1,4 +1,4 @@
-import { radarIdFor } from "../../../../personal-radar/catalog_sync/node.js";
+import { radarIdFor } from "@personal-radar/connectors/catalog-sync";
 import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
