@@ -584,3 +584,5 @@ CLI: `npm run catalog:sync -- status`, `pull --dry-run`, `pull`, `flush --dry-ru
 ## Проверка архитектурной интеграции
 
 Полный CI с приватным общим пакетом выполняется в Personal Radar (`Validate connectors and consumers`): clean install, imports, unit/MCP tests и production builds во временной структуре Life Stack. После изменения приложения запустите этот workflow в Personal Radar; source checks этого публичного репозитория проверяют доступную без приватных credentials часть и не заменяют integration CI. В workflows нет provider calls, пользовательских БД и опубликованных токенов.
+
+Telegram catalog sync принимает только Radar `metadata.channel_type=activity`. Архив, фильтры и exclusions остаются самостоятельными локальными настройками. Новые источники создаются inactive по умолчанию; `catalog:sync -- materialize --radar-id ... --enable-monitoring --confirmed` явно включает только новую карточку. [Семантика и удаления](../personal-radar/docs/catalog-sync.md).
