@@ -153,3 +153,116 @@ Payload examples live in `skills/ai-mcp-discovery/references/api.md`.
 Monitoring MCP defaults exclude replies and explicit advertising disclosures. `replyCount` is metadata about replies to a source post, not a reason to discard that post. Keyword, hashtag and domain exclusions remain optional literal rules; they do not infer that every paid event is an ad.
 
 Provider metadata in `/bootstrap` also describes how Sources should present an integration: `configFields` is the audited allow-list of functional Configure fields (`scope`, `url`, `format`, `keyword`, `minRating`); `mcpServer` and `mcpTools` list model-callable STDIO tools; `webSearchLlm` marks setup-free indexed web discovery; `hiddenFromSources` suppresses legacy catalog rows; and `otherSource` moves low-priority regional integrations to the Other tab. The Google Places source additionally exposes a local `quotaUsage` snapshot for the current Pro billing month (`used`, `limit`, `remaining`, `billingMonth`). Credential values are never included; only per-key presence is returned.
+
+## Рекомендации
+
+`GET /api/recommendations?scopeId=belgrade&kind=week` (kind по умолчанию week)
+возвращает `{settings: {revision,prompts}, snapshot, period, timeZone, hidden, favorites}`.
+`kind=concerts-2026` выбирает отдельную годовую вкладку.
+`period` недели всегда сегодня–воскресенье в scope.timezone; годовой период —
+2026-01-01–2026-12-31. `snapshot=null`, если подборок ещё нет. Настройки общие
+для географий и вкладок. GET не запускает синхронизацию или модель.
+Видимый snapshot исключает скрытое, истёкшие события и даты начала раньше сегодня.
+Исторический payload сохраняется для идемпотентности; ID/updatedAt не меняются от
+фильтров или наступления нового дня.
+
+`POST /api/recommendations/hide` принимает `{scopeId,item}` с полной карточкой;
+возвращает `{id,item,hiddenAt}`. Скрытие постоянно до restore/окончания события,
+сохраняется в той же SQLite, действует на обе вкладки в scope. Повторное скрытие
+того же сеанса не создаёт дубль. `GET /api/recommendations/hidden?scopeId=…` возвращает
+`{hidden:[{id,item,hiddenAt}]}`. `POST /api/recommendations/restore {scopeId,id}`
+возвращает `{restored:true}`; не позволяет восстановить истёкшее/чужой scope.
+Восстановленная карточка возвращается даже после обновления снимка, где её нет.
+Истёкшие записи очищаются при запросах и раз в минуту работающим веб-сервисом.
+
+`POST /api/recommendations/filter-candidates {scopeId,candidates}` — deterministic
+фильтр скрытого **до relevance scoring**. До 2000 кандидатов с `title,startAt,
+sourceName,sourceUrl`, необязательными `eventUrl,endAt` и дополнительными полями.
+Ответ: `{candidates,excludedCount,hiddenCount}`, без исключённых текстов.
+Ключи учитывают локальную дату, нормализованные название/источник или
+название/Telegram-канал, либо eventUrl без tracking (для Telegram — ещё и название).
+Время в пределах дня может меняться; иной день того же события не блокируется.
+Новые неузнаваемые названия/ссылки требуют отдельного подтверждения, нечётких совпадений нет.
+Публикация и GET дополнительно исключают скрытое независимо от вызова этого фильтра.
+Hide/restore не меняют пользовательские реакции canonical/Telegram карточек.
+
+`PUT /api/recommendations/favorite {scopeId,item,favorite}` устанавливает или снимает
+звёздочку отдельного избранного рекомендаций; `item` — полная карточка, `favorite` —
+boolean. Ответ `{favorite}`; повторная установка не создаёт дубль, повторное снятие
+допустимо. GET recommendations возвращает `favorites:[{id,item,addedAt}]` для scope.
+Сопоставление использует те же ключи даты/названия/источника/ссылки, что скрытие.
+Звёздочка не убирает карточку из обычного календаря и не меняет snapshot ID/updatedAt.
+Запланированные события добавляются к текущему view, если новый snapshot их пропустил;
+история снимков остаётся неизменной. Прошедшее очищается штатной минутной проверкой.
+Скрытие имеет приоритет, favorite при этом сохраняется. Это не favourite-состояние
+canonical Event или Telegram и не новая реакция для обучения профиля.
+
+`PUT /api/recommendations/settings` принимает
+`{expectedRevision, prompts: {sport,walks,social,concerts}}` — четыре непустых
+строки до 12000 символов. Сохраняет настройки и повышает revision; устаревшая
+revision отклоняется, существующая подборка не пересчитывается.
+
+`GET /api/recommendations/schema` — JSON Schema для публикации.
+`POST /api/recommendations` принимает полный снимок:
+
+```json
+{
+  "id": "UUID",
+  "scopeId": "belgrade",
+  "kind": "week",
+  "startDate": "2026-10-13",
+  "endDate": "2026-10-18",
+  "requestSummary": "Подборка по текущим критериям",
+  "notes": "Покрытие источников и ограничения",
+  "settingsRevision": 0,
+  "expectedSnapshotId": null,
+  "items": []
+}
+```
+
+Items используют схему AI-дайджеста с обязательной `group`:
+`sport|walks|social|concerts`; title, description, startAt, endAt, aiScore 0–10,
+sourceName, sourceUrl, eventUrl, tags. До 500 строк; только HTTP(S)-ссылки.
+Описание — 1–2 предложения. Неизвестное время задаётся date-only; окончание
+допускается пустым. В UI событие отображается только на дате начала и занимает
+условный час; фактический endAt не подменяется. Совпавшие часовые слоты объединяются
+в список названий с подробной модалкой. Годовая вкладка принимает только concerts (музыка, выступления и фестивали, включая еду); период недели должен
+совпадать с текущим календарём. Дата начала items должна входить в период;
+события не должны быть прошедшими
+по окончанию (или началу при неизвестном окончании). Date-only сегодняшний день
+допустим. Точные повторы title/URL/startAt отклоняются; семантическую дедупликацию
+по программе и месту выполняет модель.
+
+`expectedSnapshotId` — ID текущего снимка этого scope/kind, либо null;
+`settingsRevision` — revision актуальных промптов. Оба проверяются атомарно.
+Ответ — снимок с серверным `updatedAt`. UUID идемпотентен для одинакового payload,
+другой payload с тем же UUID отклоняется. Повтор старого UUID не меняет текущий
+снимок. Старые снимки сохраняются в `recommendation_snapshots` существующей SQLite
+(миграция 034); промпты — ключ `recommendation-prompts` таблицы settings.
+Ошибки схемы/периода/конфликта возвращаются стандартным HTTP 400 `{error}`.
+
+Модель читает критерии из GET, сохраняет результат POST и проверяет его GET;
+не меняет SQLite напрямую. Workflow и Knowledge-список Telegram описаны в
+[activity-recommendations](../skills/activity-recommendations/SKILL.md).
+
+`GET /api/recommendations/sources?scopeId=belgrade` возвращает
+`{telegram, other, additional, knowledgeRevision, warning}` для списка в настройках.
+Каждая запись: `{id,name,url,description,method,enabled}`;
+method — `telegram|aggregator|web|snapshot`. Telegram выбирается по фильтру коллекции
+`activity-telegram-channel-monitoring` из всех JSONL source-shards manifest
+соседнего Personal Radar. Локальное исключение мониторинга задаёт enabled=false.
+`other` содержит подключённые агрегаторы событий и LLM Web по metadata, даже если
+у LLM Web отсутствует API-подключение. `additional` — уникальные сайты из sourceUrl
+и eventUrl последних снимков двух вкладок; ссылки на карты и Google Forms исключены.
+При ошибке Knowledge список Telegram пуст и warning объясняет недоступность;
+остальные источники доступны. Endpoint только читает локальные файлы/SQLite,
+не вызывает providers, не записывает данные и не запускает синхронизацию.
+
+### Личные события рекомендаций
+
+`GET /api/recommendations` дополнительно возвращает `personal`: личные записи географии (включая удалённые до конца недели), отдельно от `snapshot.items`.
+
+- `POST /api/recommendations/personal`: `{id: UUID, scopeId, day: YYYY-MM-DD, hour: 0..23, title, description}`. День — сегодня–воскресенье по часовому поясу scope; время переводится сервером из местного в UTC. Повтор того же ID/содержимого идемпотентен и не отменяет удаление/избранное; другой payload с занятым ID отклоняется.
+- `PUT /api/recommendations/personal/state`: `{scopeId, id, deleted?: boolean, favorite?: boolean}`; требуется хотя бы одно изменение. `deleted=true` переносит в «Скрытое», false восстанавливает. Запись другой географии недоступна.
+
+Личные записи имеют `group=personal`, не получают AI-score, не принимаются через LLM-публикацию и не входят в кандидаты модели. `weekEndDate` задаётся сервером; после его окончания записи очищаются в существующей SQLite при штатной очистке/чтении. Отдельная миграция 037 не меняет путь базы. Скрытие рекомендаций и их предварительный фильтр работают по прежнему контракту.

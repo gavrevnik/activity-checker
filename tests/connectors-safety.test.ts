@@ -197,6 +197,9 @@ it("enforces the budget through real MCP handlers and keeps dry-run free of HTTP
 it("keeps stable event identity, manual overrides and reactions after repeated shared-parser imports", () => {
   const store = new Store(":memory:");
   try {
+    // The fixture must remain future-dated: ingestion archives past events.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-09T12:00:00Z"));
     const source = store.source("source-serbia-travel"),
       ctx = { source, scope: store.scope("belgrade"), secrets: {} };
     const page = {
@@ -242,6 +245,7 @@ it("keeps stable event identity, manual overrides and reactions after repeated s
     });
     expect(store.entity(id).provenance).toHaveLength(1);
   } finally {
+    vi.useRealTimers();
     store.close();
   }
 });

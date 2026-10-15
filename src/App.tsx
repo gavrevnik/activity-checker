@@ -7,6 +7,7 @@ import {
   AlertCircle,
   MapPin,
   UserRound,
+  CalendarDays,
 } from "lucide-react";
 import type {
   Candidate,
@@ -30,6 +31,7 @@ import { Detail } from "./Detail";
 import { Busy } from "./components";
 import { SyncConfirmation } from "./SyncConfirmation";
 import { Profile } from "./Profile";
+import { Recommendations } from "./Recommendations";
 import { createEntityStateUpdater } from "./entity-state";
 import { saveEntityState } from "./entity-state-api";
 interface Data {
@@ -45,7 +47,9 @@ interface Data {
 export default function App() {
   const [data, setData] = useState<Data | null>(null),
     [tab, setTab] = useState(
-      localStorage.getItem("activity-tab") || "activities",
+      location.hash === "#recommendations"
+        ? "recommendations"
+        : localStorage.getItem("activity-tab") || "activities",
     ),
     [scopeId, setScopeId] = useState(
       localStorage.getItem("activity-scope") || "belgrade",
@@ -73,12 +77,14 @@ export default function App() {
   }, []);
   useEffect(() => {
     refresh().catch((e) => setNotice({ text: e.message, error: true }));
-    const handler = () =>
+    const handler = () => {
+      if (location.hash === "#recommendations") setTab("recommendations");
       setSelected(
         location.hash.startsWith("#activity/")
           ? decodeURIComponent(location.hash.slice(10))
           : "",
       );
+    };
     window.addEventListener("hashchange", handler);
     return () => window.removeEventListener("hashchange", handler);
   }, [refresh]);
@@ -215,6 +221,13 @@ export default function App() {
               ) && <i className="nav-alert" />}
           </button>
           <button
+            className={tab === "recommendations" ? "active" : ""}
+            onClick={() => setTab("recommendations")}
+          >
+            <CalendarDays size={16} />
+            Рекомендации
+          </button>
+          <button
             className={tab === "profile" ? "active" : ""}
             onClick={() => setTab("profile")}
           >
@@ -296,6 +309,8 @@ export default function App() {
                   })
                 }
               />
+            ) : tab === "recommendations" ? (
+              <Recommendations key={scope.id} scope={scope} />
             ) : tab === "sources" ? (
               <Sources
                 sources={data.sources}

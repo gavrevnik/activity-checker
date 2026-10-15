@@ -20,6 +20,7 @@ import { registerAiEventsReviewApi } from "./ai-events-review.js";
 import { registerAiMcpDiscoveryApi } from "./ai-mcp-discovery.js";
 import { registerTelegramEventsApi } from "./telegram-events.js";
 import { AiDigests, registerAiDigestsApi } from "./ai-digests.js";
+import { registerRecommendationsApi } from "./recommendations.js";
 import { dislikeReasonSchema } from "../shared/personal-state.js";
 import {
   readAutoArchiveSettings,
@@ -70,6 +71,7 @@ export function createApi(store: Store, port: number) {
   registerTelegramBatchApi(app, store);
   registerTelegramEventsApi(app, store);
   registerAiDigestsApi(app, store);
+  registerRecommendationsApi(app, store);
   app.get("/api/bootstrap", (_req, res) =>
     res.json({
       scopes: store.scopes(),

@@ -6,6 +6,7 @@ import { Store } from "./store.js";
 import { createApi } from "./api.js";
 import { seedDemo } from "./demo.js";
 import { autoArchivePastEvents } from "./auto-archive.js";
+import { Recommendations } from "./recommendations.js";
 let runtime: Record<string, string> = {};
 try {
   runtime = parse(readFileSync(".env.local"));
@@ -19,6 +20,13 @@ const store = new Store(
     "../data/activity-checker/activity.sqlite",
 );
 seedDemo(store);
+const recommendations = new Recommendations(store);
+recommendations.cleanupVisibility();
+const recommendationCleanup = setInterval(
+  () => recommendations.cleanupVisibility(),
+  60000,
+);
+recommendationCleanup.unref();
 const autoArchive = autoArchivePastEvents(store);
 if (autoArchive.archived)
   console.log(`Автоархив: ${autoArchive.archived} прошедших мероприятий.`);
@@ -41,6 +49,7 @@ const server = app.listen(port, "127.0.0.1", () =>
   console.log(`Activity Checker · http://127.0.0.1:${port}`),
 );
 server.on("error", (error) => {
+  clearInterval(recommendationCleanup);
   console.error(error.message);
   store.close();
   process.exit(1);
@@ -48,6 +57,7 @@ server.on("error", (error) => {
 for (const signal of ["SIGINT", "SIGTERM"] as const)
   process.on(signal, () =>
     server.close(() => {
+      clearInterval(recommendationCleanup);
       store.close();
       process.exit(0);
     }),
