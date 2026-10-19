@@ -246,15 +246,15 @@ export class TelegramEvents {
         throw new Error(
           "Пост исключён ключевым словом в настройках мониторинга.",
         );
-      if (isPast(selection, "Europe/Belgrade", now))
+      if (isPast(selection, args.monitoring.range.timeZone, now))
         throw new Error(
           "Прошедшее мероприятие не добавляется в активную вкладку.",
         );
       if (selection.endAt) {
         const earlier =
           selection.endAt.length === 10 || selection.startAt.length === 10
-            ? localDay(selection.endAt, "Europe/Belgrade") <
-              localDay(selection.startAt, "Europe/Belgrade")
+            ? localDay(selection.endAt, args.monitoring.range.timeZone) <
+              localDay(selection.startAt, args.monitoring.range.timeZone)
             : new Date(selection.endAt).valueOf() <
               new Date(selection.startAt).valueOf();
         if (earlier) throw new Error("Окончание раньше начала мероприятия.");

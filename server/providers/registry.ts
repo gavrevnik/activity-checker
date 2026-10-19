@@ -6,6 +6,7 @@ import belgradeBeat from "./websites/belgrade-beat.js";
 import afisha from "./websites/afisha.js";
 import tickets from "./websites/tickets.js";
 import serbiaTravel from "./websites/serbia-travel.js";
+import { moldovaProviders } from "./websites/moldova.js";
 import allEvents from "./websites/allevents.js";
 import { apifyProviders } from "./apify/providers.js";
 import { telegram } from "./telegram/provider.js";
@@ -21,6 +22,7 @@ export const providers: ActivityProvider[] = [
   tickets,
   serbiaTravel,
   allEvents,
+  ...moldovaProviders,
   telegram,
   foursquare,
   googlePlacesApi,

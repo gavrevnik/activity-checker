@@ -236,3 +236,59 @@ describe("AllEvents adapter", () => {
     expect(JSON.parse(row.categorySlugs)).toContain("music");
   });
 });
+
+it("selects Chisinau in bootstrap, API body and Referer and keeps MD geography", async () => {
+  const ctx = {
+    source: store.source("source-allevents-chisinau"),
+    scope: store.scope("chisinau"),
+    secrets: {},
+  };
+  const md = {
+    ...event(),
+    eventname: "Chisinau Jazz",
+    venue: { city: "Chișinău" },
+    event_url: "https://allevents.in/chisinau/md-event",
+  };
+  const mock = vi
+    .spyOn(globalThis, "fetch")
+    .mockResolvedValueOnce(bootstrap())
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify({ item: [md], count: 1 }), { status: 200 }),
+    );
+  const options = {
+    confirmed: false,
+    startDate: day(),
+    endDate: day(14),
+    categories: ["music"],
+  };
+  const plan = await allEvents.planSync!(ctx, options);
+  expect(String(mock.mock.calls[0][0])).toBe(
+    "https://allevents.in/chisinau/all",
+  );
+  const init = mock.mock.calls[1][1]!;
+  expect(JSON.parse(String(init.body)).city).toBe("chisinau");
+  expect(new Headers(init.headers).get("Referer")).toBe(
+    "https://allevents.in/chisinau/all",
+  );
+  const result = await allEvents.sync(ctx, {
+    ...options,
+    confirmed: true,
+    previewId: plan.previewId,
+  });
+  expect((result.items[0].payload as any).normalized).toMatchObject({
+    country: "MD",
+    city: "Chisinau",
+  });
+});
+it("rejects another city's AllEvents cards instead of relabeling them", () => {
+  expect(() =>
+    parseAllEventsEvent(
+      { ...event(), venue: { city: "Bălți" } },
+      {
+        source: store.source("source-allevents-chisinau"),
+        scope: store.scope("chisinau"),
+        secrets: {},
+      },
+    ),
+  ).toThrow(/город/);
+});

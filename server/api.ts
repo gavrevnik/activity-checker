@@ -1,3 +1,4 @@
+import { prepareRecommendationTelegramSources } from "./recommendation-setup.js";
 import { registerCatalogApi } from "./catalog-sync.js";
 import { registerTelegramBatchApi } from "./telegram-batch-api.js";
 import { registerGoogleSavedApi } from "./google-saved-api.js";
@@ -108,6 +109,13 @@ export function createApi(store: Store, port: number) {
   app.put("/api/auto-archive/settings", (req, res) =>
     res.json(saveAutoArchiveSettings(store, req.body)),
   );
+  app.post("/api/recommendations/prepare-sources", (req, res) => {
+    const { scopeId } = z
+      .object({ scopeId: z.string().min(1) })
+      .strict()
+      .parse(req.body);
+    res.json(prepareRecommendationTelegramSources(store, scopeId));
+  });
   app.get("/api/profile", (_req, res) => res.json(store.profile()));
   app.put("/api/profile", (req, res) =>
     res.json(store.saveProfile(userProfileSchema.parse(req.body))),

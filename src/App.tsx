@@ -32,6 +32,7 @@ import { Busy } from "./components";
 import { SyncConfirmation } from "./SyncConfirmation";
 import { Profile } from "./Profile";
 import { Recommendations } from "./Recommendations";
+import type { RecommendationKind } from "../shared/recommendations";
 import { createEntityStateUpdater } from "./entity-state";
 import { saveEntityState } from "./entity-state-api";
 interface Data {
@@ -44,13 +45,14 @@ interface Data {
   profile: UserProfile;
   filterRules: FilteringRulesView;
 }
+// Temporarily keep the legacy sections out of the web UI. Their code and APIs remain available.
+const showLegacySections = false;
+
 export default function App() {
+  const [recommendationKind, setRecommendationKind] =
+    useState<RecommendationKind>("week");
   const [data, setData] = useState<Data | null>(null),
-    [tab, setTab] = useState(
-      location.hash === "#recommendations"
-        ? "recommendations"
-        : localStorage.getItem("activity-tab") || "activities",
-    ),
+    [tab, setTab] = useState("recommendations"),
     [scopeId, setScopeId] = useState(
       localStorage.getItem("activity-scope") || "belgrade",
     ),
@@ -60,7 +62,7 @@ export default function App() {
     [source, setSource] = useState<SourceView>(),
     [syncSource, setSyncSource] = useState<SourceView>(),
     [selected, setSelected] = useState(
-      location.hash.startsWith("#activity/")
+      showLegacySections && location.hash.startsWith("#activity/")
         ? decodeURIComponent(location.hash.slice(10))
         : "",
     ),
@@ -74,13 +76,20 @@ export default function App() {
   const refresh = useCallback(async () => {
     const d = await api<Data>("/bootstrap");
     setData(d);
+    setScopeId((current) =>
+      d.scopes.some((scope) => scope.id === current)
+        ? current
+        : d.scopes.find((scope) => scope.id === "belgrade")?.id ||
+          d.scopes[0]?.id ||
+          "belgrade",
+    );
   }, []);
   useEffect(() => {
     refresh().catch((e) => setNotice({ text: e.message, error: true }));
     const handler = () => {
       if (location.hash === "#recommendations") setTab("recommendations");
       setSelected(
-        location.hash.startsWith("#activity/")
+        showLegacySections && location.hash.startsWith("#activity/")
           ? decodeURIComponent(location.hash.slice(10))
           : "",
       );
@@ -192,49 +201,51 @@ export default function App() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <a className="brand" href="#" onClick={showActivities}>
+        <a className="brand" href="#" onClick={() => setTab("recommendations")}>
           <img src="/favicon.svg" alt="" />
           <span>
             activity<span className="brand-light"> checker</span>
           </span>
         </a>
-        <nav aria-label="Основная навигация">
-          <button
-            className={tab === "activities" ? "active" : ""}
-            onClick={showActivities}
-          >
-            <Layers size={16} />
-            Активности
-          </button>
-          <button
-            className={tab === "sources" ? "active" : ""}
-            onClick={() => setTab("sources")}
-          >
-            <Plug size={16} />
-            Источники
-            {data &&
-              data.sources.some(
-                (s) =>
-                  !s.provider.hiddenFromSources &&
-                  s.provider.group !== "Свои источники" &&
-                  s.connection.status === "error",
-              ) && <i className="nav-alert" />}
-          </button>
-          <button
-            className={tab === "recommendations" ? "active" : ""}
-            onClick={() => setTab("recommendations")}
-          >
-            <CalendarDays size={16} />
-            Рекомендации
-          </button>
-          <button
-            className={tab === "profile" ? "active" : ""}
-            onClick={() => setTab("profile")}
-          >
-            <UserRound size={16} />
-            Мой профиль
-          </button>
-        </nav>
+        {showLegacySections && (
+          <nav aria-label="Основная навигация">
+            <button
+              className={tab === "activities" ? "active" : ""}
+              onClick={showActivities}
+            >
+              <Layers size={16} />
+              Активности
+            </button>
+            <button
+              className={tab === "sources" ? "active" : ""}
+              onClick={() => setTab("sources")}
+            >
+              <Plug size={16} />
+              Источники
+              {data &&
+                data.sources.some(
+                  (s) =>
+                    !s.provider.hiddenFromSources &&
+                    s.provider.group !== "Свои источники" &&
+                    s.connection.status === "error",
+                ) && <i className="nav-alert" />}
+            </button>
+            <button
+              className={tab === "recommendations" ? "active" : ""}
+              onClick={() => setTab("recommendations")}
+            >
+              <CalendarDays size={16} />
+              Рекомендации
+            </button>
+            <button
+              className={tab === "profile" ? "active" : ""}
+              onClick={() => setTab("profile")}
+            >
+              <UserRound size={16} />
+              Мой профиль
+            </button>
+          </nav>
+        )}
         {tab !== "profile" && (
           <div className="scope-control">
             <MapPin size={15} />
@@ -310,7 +321,29 @@ export default function App() {
                 }
               />
             ) : tab === "recommendations" ? (
-              <Recommendations key={scope.id} scope={scope} />
+              <Recommendations
+                key={scope.id}
+                scope={scope}
+                kind={recommendationKind}
+                onKindChange={setRecommendationKind}
+                onProfileChanged={() => void refresh()}
+                profileContent={
+                  <Profile
+                    embedded
+                    profile={data.profile}
+                    busy={busy === "profile"}
+                    onSave={async (profile: UserProfileInput) => {
+                      setBusy("profile");
+                      try {
+                        await api("/profile", "PUT", profile);
+                        await refresh();
+                      } finally {
+                        setBusy("");
+                      }
+                    }}
+                  />
+                }
+              />
             ) : tab === "sources" ? (
               <Sources
                 sources={data.sources}

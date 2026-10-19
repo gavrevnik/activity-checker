@@ -1,0 +1,4 @@
+interface:
+  display_name: "Старт Activity Checker"
+  short_description: "Настроить рекомендации, ключи, Telegram и личный профиль"
+  default_prompt: "Используй $start: проверь готовность Activity Checker и проведи меня по первому запуску рекомендаций короткими шагами."

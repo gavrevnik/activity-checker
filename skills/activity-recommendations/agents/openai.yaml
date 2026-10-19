@@ -1,4 +1,4 @@
 interface:
   display_name: "Рекомендации активностей"
-  short_description: "Календарь недели, концерты и фестивали в Activity Checker"
-  default_prompt: "Используй $activity-recommendations и обнови рекомендации недели и концерты с фестивалями 2026 года."
+  short_description: "Календарь двух недель, концерты и фестивали в Activity Checker"
+  default_prompt: "Используй $activity-recommendations и обнови рекомендации текущей и следующей недели одним сбором и концерты с фестивалями 2026 года."

@@ -63,7 +63,7 @@ export default defineProvider(
     group: "API Агрегаторы",
     providerType: "Website/Aggregator",
     supportedEntityTypes: ["Event"],
-    supportedScopes: ["serbia", "belgrade"],
+    supportedScopes: ["belgrade"],
     implemented: true,
     mode: "ingestion",
     configFields: ["scope", "url", "keyword"],
@@ -75,7 +75,7 @@ export default defineProvider(
       { label: "Календарь Serbia Travel", url: `${origin}/en/event-calendar/` },
     ],
     steps: [
-      "Регистрация и ключ не нужны. Оставьте URL английского календаря и выберите Сербию или Белград.",
+      "Регистрация и ключ не нужны. Оставьте URL английского календаря; источник подключён к Белграду.",
       "Единая кнопка блока API Агрегаторы запускает источник. Для поиска по названию задайте ключевое слово.",
     ],
     limitations:

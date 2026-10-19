@@ -11,10 +11,10 @@ import {
   Copy,
   CalendarDays,
   Music2,
-  RefreshCw,
   ChevronDown,
   X,
   EyeOff,
+  ListFilter,
   RotateCcw,
   Star,
   Mic,
@@ -32,6 +32,8 @@ import {
   calendarGroups,
   recommendationGroups,
   remainingWeek,
+  nextWeek,
+  type RecommendationKind,
   recommendationsOnDay,
   recommendationTime,
   recommendationExpired,
@@ -43,6 +45,7 @@ import {
   type RecommendationPrompts,
   type RecommendationSettings,
   type RecommendationsView,
+  type RejectedRecommendation,
   type RecommendationSourcesView,
 } from "../shared/recommendations";
 import { api } from "./api";
@@ -347,6 +350,7 @@ export function RecommendationWeek({
   hiding,
   hideError,
   minimumStartHour = null,
+  kind = "week",
   ...favoriteActions
 }: {
   items: RecommendationItem[];
@@ -354,6 +358,7 @@ export function RecommendationWeek({
   timeZone: string;
   filters?: ReactNode;
   minimumStartHour?: number | null;
+  kind?: "week" | "next-week";
 } & RecommendationActions) {
   const headingScroll = useRef<HTMLDivElement>(null);
   const calendarScroll = useRef<HTMLDivElement>(null);
@@ -373,7 +378,7 @@ export function RecommendationWeek({
     hour: number;
     items: RecommendationItem[];
   } | null>(null);
-  const days = remainingWeek(today);
+  const days = kind === "next-week" ? nextWeek(today) : remainingWeek(today);
   const entries = days.map((day) => ({
     day,
     items: recommendationsOnDay(items, day, timeZone),
@@ -631,6 +636,43 @@ export function RecommendationSourcesList({
               </span>
             )}
           </div>
+          {source.venue && (
+            <small>
+              {source.venue.priority} ·{" "}
+              {(
+                {
+                  official_calendar: "Официальная афиша",
+                  official_social: "Соцсеть площадки",
+                  aggregator_listing: "Страница агрегатора",
+                  ticketing_listing: "Билетная страница",
+                  venue_info_only: "Информация / ссылки",
+                } as Record<string, string>
+              )[source.venue.pageType] || source.venue.pageType}
+              {" · "}
+              {source.venue.eventTypes
+                .map(
+                  (type) =>
+                    (
+                      ({
+                        live_music: "Концерты",
+                        electronic: "Электроника",
+                        festival: "Фестивали",
+                        standup: "Стендап",
+                      }) as Record<string, string>
+                    )[type] || "Другие события",
+                )
+                .join(", ")}
+              {source.venue.calendarAvailability !== "readable" &&
+                " · Афишу нужно проверить по анонсам"}
+            </small>
+          )}
+          {source.venue?.afishaVenueUrl && (
+            <small>
+              <External href={source.venue.afishaVenueUrl}>
+                Afisha · события площадки
+              </External>
+            </small>
+          )}
           <small>{source.description}</small>
         </li>
       ))}
@@ -643,8 +685,9 @@ export function RecommendationSourcesList({
     >
       <h3>Источники поиска мероприятий</h3>
       <p className="muted">
-        Список Telegram обновляется из коллекции каналов активностей Personal
-        Radar при открытии настроек.
+        Каналы, концертные площадки и организаторы читаются из локального
+        каталога Personal Radar при открытии настроек. Наличие источника не
+        означает, что его афиша уже проверена в текущей подборке.
       </p>
       {sources.warning && (
         <p className="notice error" role="alert">
@@ -653,7 +696,7 @@ export function RecommendationSourcesList({
       )}
       <details className="rec-telegram-sources">
         <summary>
-          Telegram-каналы ·{" "}
+          Telegram-источники ·{" "}
           {sources.warning ? "список недоступен" : sources.telegram.length}
         </summary>
         {sources.telegram.length
@@ -664,6 +707,27 @@ export function RecommendationSourcesList({
               </p>
             )}
       </details>
+      {sources.venueWarning && (
+        <p className="notice error" role="alert">
+          {sources.venueWarning}
+        </p>
+      )}
+      {(sources.venues?.length > 0 || sources.venueWarning) && (
+        <>
+          <h4>
+            Концертные площадки ·{" "}
+            {sources.venues?.filter((s) => s.venue?.kind === "venue").length ||
+              0}
+          </h4>
+          {list(
+            (sources.venues || []).filter((s) => s.venue?.kind === "venue"),
+          )}
+          <h4>Организаторы концертов</h4>
+          {list(
+            (sources.venues || []).filter((s) => s.venue?.kind === "organizer"),
+          )}
+        </>
+      )}
       <h4>Другие источники</h4>
       {list(sources.other)}
       {sources.additional.length > 0 && (
@@ -739,7 +803,9 @@ function RecommendationSettingsModal({
   scopeId,
   onClose,
   onSaved,
+  profileContent,
 }: {
+  profileContent?: ReactNode;
   settings: RecommendationSettings;
   scopeId: string;
   onClose: () => void;
@@ -748,6 +814,9 @@ function RecommendationSettingsModal({
   const [prompts, setPrompts] = useState<RecommendationPrompts>({
     ...settings.prompts,
   });
+  const [section, setSection] = useState(
+    profileContent ? "profile" : "criteria",
+  );
   const [expectedRevision] = useState(settings.revision);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
@@ -769,53 +838,100 @@ function RecommendationSettingsModal({
   };
   return (
     <Modal
-      title="Критерии рекомендаций"
+      title="Мой профиль"
       onClose={() => {
         if (!busy) onClose();
       }}
       wide
     >
-      <p className="muted">
-        Для каждой группы — один промпт поиска и отбора. Новые критерии
-        применяются при следующем запуске модели, включая концерты и фестивали
-        2026 года.
-      </p>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          void save();
-        }}
-        className="rec-settings-form"
-      >
-        {recommendationGroups.map((group) => (
-          <Field key={group} label={groupLabels[group]}>
-            <textarea
-              required
-              maxLength={12000}
-              rows={5}
-              value={prompts[group]}
-              disabled={busy}
-              onChange={(e) =>
-                setPrompts({ ...prompts, [group]: e.target.value })
-              }
-            />
-          </Field>
-        ))}
-        {error && (
-          <p className="error-text" role="alert">
-            {error}
-          </p>
-        )}
-        <RecommendationSources scopeId={scopeId} />
-        <div className="rec-actions">
-          <Button onClick={onClose} disabled={busy}>
-            Отмена
-          </Button>
-          <Button primary type="submit" disabled={busy}>
-            {busy && <Busy />}Сохранить критерии
-          </Button>
+      {profileContent && (
+        <div
+          className="rec-tabs rec-profile-tabs"
+          role="tablist"
+          aria-label="Настройки профиля"
+        >
+          <button
+            type="button"
+            role="tab"
+            id="rec-preferences-tab"
+            aria-controls="rec-preferences-panel"
+            aria-selected={section === "profile"}
+            className={section === "profile" ? "active" : ""}
+            onClick={() => setSection("profile")}
+          >
+            Предпочтения
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="rec-criteria-tab"
+            aria-controls="rec-criteria-panel"
+            aria-selected={section === "criteria"}
+            className={section === "criteria" ? "active" : ""}
+            onClick={() => setSection("criteria")}
+          >
+            Критерии поиска
+          </button>
         </div>
-      </form>
+      )}
+      <div
+        id="rec-preferences-panel"
+        role="tabpanel"
+        aria-labelledby="rec-preferences-tab"
+        hidden={section !== "profile"}
+        className="rec-profile-content"
+      >
+        {profileContent}
+      </div>
+      <div
+        id="rec-criteria-panel"
+        role="tabpanel"
+        aria-labelledby={profileContent ? "rec-criteria-tab" : undefined}
+        hidden={section !== "criteria"}
+      >
+        <h2>Критерии рекомендаций</h2>
+        <p className="muted">
+          Для каждой группы — один промпт поиска и отбора. Новые критерии
+          применяются при следующем запуске модели, включая концерты и фестивали
+          2026 года.
+        </p>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void save();
+          }}
+          className="rec-settings-form"
+        >
+          {recommendationGroups.map((group) => (
+            <Field key={group} label={groupLabels[group]}>
+              <textarea
+                required
+                maxLength={12000}
+                rows={5}
+                value={prompts[group]}
+                disabled={busy}
+                onChange={(e) =>
+                  setPrompts({ ...prompts, [group]: e.target.value })
+                }
+              />
+            </Field>
+          ))}
+          {error && (
+            <p className="error-text" role="alert">
+              {error}
+            </p>
+          )}
+          <RecommendationSources scopeId={scopeId} />
+          <div className="rec-actions">
+            <Button onClick={onClose} disabled={busy}>
+              Отмена
+            </Button>
+            <Button primary type="submit" disabled={busy}>
+              {busy && <Busy />}Сохранить критерии
+            </Button>
+          </div>
+        </form>
+      </div>
     </Modal>
   );
 }
@@ -946,14 +1062,26 @@ function PersonalRecommendationModal({
   );
 }
 
-export function Recommendations({ scope }: { scope: Scope }) {
-  const [kind, setKind] = useState<"week" | "concerts-2026">("week");
+export function Recommendations({
+  scope,
+  kind,
+  onKindChange,
+  profileContent,
+  onProfileChanged,
+}: {
+  profileContent?: ReactNode;
+  onProfileChanged?: () => void;
+  scope: Scope;
+  kind: RecommendationKind;
+  onKindChange: (kind: RecommendationKind) => void;
+}) {
   const [view, setView] = useState<RecommendationsView | null>(null);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState(false),
     [copied, setCopied] = useState(false);
   const [updateDetails, setUpdateDetails] = useState<string | null>(null);
   const [showHidden, setShowHidden] = useState(false);
+  const [showRejected, setShowRejected] = useState(false);
   const [addingPersonal, setAddingPersonal] = useState(false);
   const [visibilityBusy, setVisibilityBusy] = useState(false);
   const [favoriteBusy, setFavoriteBusy] = useState(false);
@@ -1011,6 +1139,9 @@ export function Recommendations({ scope }: { scope: Scope }) {
         hiddenAt: item.deletedAt!,
       })),
   ].filter((row) => !recommendationExpired(row.item, clockNow, timeZone));
+  const rejected = (view?.rejected || []).filter(
+    (item) => !recommendationExpired(item, clockNow, timeZone),
+  );
   const favoriteKeys = new Set(
     (view?.favorites || [])
       .filter((row) => !recommendationExpired(row.item, clockNow, timeZone))
@@ -1134,18 +1265,19 @@ export function Recommendations({ scope }: { scope: Scope }) {
   ];
   const items = calendarItems.filter(
     (item) =>
-      (kind !== "week" || groups.includes(item.group)) &&
-      (kind !== "week" || matchesStartHour(item)) &&
+      (kind === "concerts-2026" || groups.includes(item.group)) &&
+      (kind === "concerts-2026" || matchesStartHour(item)) &&
       (!onlyFavorites || isFavorite(item)) &&
       !recommendationExpired(item, clockNow, timeZone) &&
       (!view ||
-        (recommendationDay(item.startAt, timeZone) >= today &&
+        (recommendationDay(item.startAt, timeZone) >=
+          (view.period.startDate > today ? view.period.startDate : today) &&
           recommendationDay(item.startAt, timeZone) <= view.period.endDate)),
   );
   const copyRequest = async () => {
     try {
       await navigator.clipboard.writeText(
-        `Используй $activity-recommendations: обнови ${kind === "week" ? "рекомендации с сегодняшнего дня до воскресенья текущей недели" : "концерты, выступления и фестивали до конца 2026 года"} для scopeId=${scope.id}. Прочитай актуальные промпты /api/recommendations и полный список Telegram-каналов активностей из Knowledge Personal Radar. Сохрани результат на странице «Рекомендации».`,
+        `Используй $activity-recommendations: обнови ${kind === "week" ? "рекомендации с сегодняшнего дня до воскресенья текущей недели и заодно на следующую календарную неделю (понедельник–воскресенье), используя один поток чтения источников без повторных вызовов, с отдельными снимками kind=week и kind=next-week" : kind === "next-week" ? "рекомендации на следующую календарную неделю (понедельник–воскресенье), kind=next-week" : "концерты, выступления и фестивали до конца 2026 года"} для ${scope.name}, scopeId=${scope.id}, часовой пояс ${scope.timezone}. Используй источники выбранной географии и учти языки, интересы и ограничения из актуального профиля и редактируемых промптов. Прочитай актуальные промпты /api/recommendations и полный список Telegram-источников активностей из Knowledge Personal Radar, включая публичные группы с разрешённым rich reader. ${scope.id === "chisinau" ? "Примени правила workflows/chisinau-activity-monitoring.md из Personal Radar: для CC_151 подтверждай русский язык самого события и соответствие профилю, для VoleiNet учитывай отмены и изменения игр. " : ""}Сохрани выбранные события в items, оценённые отказы с причиной в rejectedItems на странице «Рекомендации».`,
       );
       setCopied(true);
       setError("");
@@ -1178,6 +1310,7 @@ export function Recommendations({ scope }: { scope: Scope }) {
             </button>
           )}
           <Button
+            primary
             onClick={() => {
               setCopied(false);
               void copyRequest();
@@ -1186,21 +1319,10 @@ export function Recommendations({ scope }: { scope: Scope }) {
             <Copy size={16} />
             {copied ? "Запрос скопирован" : "Запрос для модели"}
           </Button>
-          <button
-            className="icon-button"
-            aria-label="Настройки рекомендаций"
-            disabled={!view}
-            onClick={() => setEditing(true)}
-          >
-            <Settings size={20} />
-          </button>
-          <button
-            className="icon-button"
-            aria-label="Обновить сохранённые рекомендации"
-            onClick={() => setRefresh((n) => n + 1)}
-          >
-            <RefreshCw size={18} />
-          </button>
+          <Button disabled={!view} onClick={() => setEditing(true)}>
+            <Settings size={16} />
+            Мой профиль
+          </Button>
         </div>
       </div>
       <div className="rec-updated">
@@ -1221,7 +1343,11 @@ export function Recommendations({ scope }: { scope: Scope }) {
         )}
         <Button disabled={!view} onClick={() => setShowHidden(true)}>
           <EyeOff size={14} />
-          Скрытое{hidden.length ? ` (${hidden.length})` : ""}
+          Скрытое ({hidden.length})
+        </Button>
+        <Button disabled={!view} onClick={() => setShowRejected(true)}>
+          <ListFilter size={14} />
+          Не прошедшее фильтрацию ({rejected.length})
         </Button>
       </div>
       <p className="muted">
@@ -1232,7 +1358,7 @@ export function Recommendations({ scope }: { scope: Scope }) {
         События размещены по дате начала. В календаре каждому отведён один час.
       </p>
       <div className="rec-tabs" role="tablist" aria-label="Период рекомендаций">
-        {(["week", "concerts-2026"] as const).map((tab) => (
+        {(["week", "next-week", "concerts-2026"] as const).map((tab) => (
           <button
             key={tab}
             role="tab"
@@ -1243,12 +1369,20 @@ export function Recommendations({ scope }: { scope: Scope }) {
                 setView(null);
                 setError("");
                 setCopied(false);
-                setKind(tab);
+                onKindChange(tab);
               }
             }}
           >
-            {tab === "week" ? <CalendarDays size={16} /> : <Music2 size={16} />}
-            {tab === "week" ? "Текущая неделя" : "Концерты и фестивали 2026"}
+            {tab !== "concerts-2026" ? (
+              <CalendarDays size={16} />
+            ) : (
+              <Music2 size={16} />
+            )}
+            {tab === "week"
+              ? "Текущая неделя"
+              : tab === "next-week"
+                ? "Следующая неделя"
+                : "Концерты и фестивали 2026"}
           </button>
         ))}
       </div>
@@ -1270,16 +1404,20 @@ export function Recommendations({ scope }: { scope: Scope }) {
               через модель.
             </p>
           )}
-          {kind === "week" ? (
+          {kind !== "concerts-2026" ? (
             <>
               {!items.length && (
                 <Empty>
                   {snapshot
-                    ? "На оставшиеся дни недели нет рекомендаций с выбранными фильтрами."
+                    ? kind === "next-week"
+                      ? "На следующую неделю нет рекомендаций с выбранными фильтрами."
+                      : "На оставшиеся дни недели нет рекомендаций с выбранными фильтрами."
                     : "Подборка пока не создана. Запустите activity-recommendations через модель."}
                 </Empty>
               )}
               <RecommendationWeek
+                key={`${scope.id}/${kind}`}
+                kind={kind}
                 items={items}
                 today={today}
                 timeZone={timeZone}
@@ -1437,6 +1575,19 @@ export function Recommendations({ scope }: { scope: Scope }) {
           <p className="rec-notes">{updateDetails}</p>
         </Modal>
       )}
+      {showRejected && (
+        <Modal
+          wide
+          title="Не прошедшее фильтрацию"
+          onClose={() => setShowRejected(false)}
+        >
+          <p className="muted">
+            Оценённые события, которые не вошли в подборку выбранного периода.
+            Здесь не учитываются фильтры календаря.
+          </p>
+          <RejectedRecommendationList items={rejected} timeZone={timeZone} />
+        </Modal>
+      )}
       {showHidden && (
         <Modal
           wide
@@ -1444,7 +1595,7 @@ export function Recommendations({ scope }: { scope: Scope }) {
           onClose={() => setShowHidden(false)}
         >
           <p className="muted">
-            Эти события исключены из обеих вкладок и новых подборок до окончания
+            Эти события исключены из всех вкладок и новых подборок до окончания
             события. Их можно восстановить. Удалённые «Мои события» хранятся до
             конца недели.
           </p>
@@ -1495,9 +1646,11 @@ export function Recommendations({ scope }: { scope: Scope }) {
       {editing && view && (
         <RecommendationSettingsModal
           settings={view.settings}
+          profileContent={profileContent}
           scopeId={scope.id}
           onClose={() => setEditing(false)}
           onSaved={(settings) => {
+            onProfileChanged?.();
             setView((current) =>
               current ? { ...current, settings } : current,
             );
@@ -1505,6 +1658,60 @@ export function Recommendations({ scope }: { scope: Scope }) {
           }}
         />
       )}
+    </div>
+  );
+}
+
+export function RejectedRecommendationList({
+  items,
+  timeZone,
+}: {
+  items: RejectedRecommendation[];
+  timeZone: string;
+}) {
+  if (!items.length)
+    return (
+      <Empty>
+        Отклонённых событий нет. Список заполняется при обновлении подборки
+        моделью.
+      </Empty>
+    );
+  const days = [
+    ...new Set(items.map((item) => recommendationDay(item.startAt, timeZone))),
+  ].sort();
+  return (
+    <div className="rec-rejected-list">
+      {days.map((day) => (
+        <section
+          key={day}
+          aria-label={dayLabel(day, { day: "numeric", month: "long" })}
+        >
+          <h3>
+            {dayLabel(day, { day: "numeric", month: "long", weekday: "long" })}
+          </h3>
+          <div className="rec-hidden-list">
+            {items
+              .filter(
+                (item) => recommendationDay(item.startAt, timeZone) === day,
+              )
+              .sort(
+                (a, b) =>
+                  Date.parse(a.startAt) - Date.parse(b.startAt) ||
+                  b.aiScore - a.aiScore,
+              )
+              .map((item, index) => (
+                <div
+                  key={`${item.eventUrl || item.sourceUrl}/${item.startAt}/${index}`}
+                >
+                  <RecommendationCard item={item} timeZone={timeZone} />
+                  <p className="rec-rejection-reason">
+                    Оценка: {item.aiScore}/10 · {item.rejectionReason}
+                  </p>
+                </div>
+              ))}
+          </div>
+        </section>
+      ))}
     </div>
   );
 }

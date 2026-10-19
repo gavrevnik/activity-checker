@@ -155,6 +155,7 @@ export class SyncService {
         archived += autoArchivePastEvents(this.store, source.scopeId).archived;
       if (archived)
         warnings.push(`Автоархив: ${archived} прошедших мероприятий.`);
+      if (fetched.coverage) result.coverage = fetched.coverage;
       result.fetched = fetched.items.length;
       result.errors = errors;
       result.warnings = [...new Set([...result.warnings, ...warnings])].slice(
@@ -179,7 +180,9 @@ export class SyncService {
           "UPDATE sync_runs SET status=?,finishedAt=?,fetched=?,created=?,updated=?,duplicates=?,filtered=?,errors=?,warnings=? WHERE id=?",
         )
         .run(
-          errors ? "partial" : "success",
+          errors || fetched.coverage?.complete === false
+            ? "partial"
+            : "success",
           finishedAt,
           result.fetched,
           result.created,

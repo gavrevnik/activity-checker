@@ -142,6 +142,13 @@ describe("providers", () => {
       tickets: ["url", "keyword"],
       "serbia-travel": ["scope", "url", "keyword"],
       allevents: ["url", "keyword"],
+      "fest-md": ["url"],
+      "iticket-md": ["url"],
+      "afisha-mira": ["url"],
+      "afisha-md": ["url"],
+      "sporter-md": ["url"],
+      "moldova-travel": ["url"],
+      "frc-chisinau": ["url"],
       telegram: ["url", "keyword"],
       foursquare: ["scope", "keyword"],
       "google-places-api": ["scope", "keyword", "minRating"],
@@ -156,7 +163,7 @@ describe("providers", () => {
     });
   });
   it("runs ordinary API aggregators globally without using the legacy enabled flag", async () => {
-    const selected = ["afisha", "belgrade-beat", "tickets"];
+    const selected = ["afisha", "belgrade-beat", "tickets", "serbia-travel"];
     const syncMocks = selected.map((id) =>
       vi.spyOn(getProvider(id), "sync").mockResolvedValue({ items: [] }),
     );

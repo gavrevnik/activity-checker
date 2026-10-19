@@ -1,5 +1,11 @@
 # API и источники рекомендаций
 
+Для нового компьютера без зарегистрированных MCP использовать
+[локальный CLI](../../start/references/local-tools.md). Все личные условия отбора и языки брать только из
+`/api/profile`, включая `additionalPreferences` и `recommendationPrompts`;
+исторические языковые предпочтения в описаниях источников не заменяют профиль.
+
+
 Работать из актуального checkout Activity Checker. API по умолчанию
 `http://127.0.0.1:4318/api`; проверить `/health`. Другой порт/путь брать из штатной
 конфигурации без вывода секретов. При необходимости запускать штатный сервис;
@@ -9,11 +15,12 @@
 
 - `GET /recommendations?scopeId=belgrade&kind=week` — `settings`, `snapshot` или
   null, актуальный `period` и `timeZone`.
+- `GET /recommendations?scopeId=belgrade&kind=next-week` — полный следующий понедельник–воскресенье.
 - `GET /recommendations?scopeId=belgrade&kind=concerts-2026` — отдельный годовой снимок.
 - `GET /recommendations/schema` — текущая JSON Schema входа для POST.
 - `PUT /recommendations/settings` — `{expectedRevision, prompts: {sport, walks,
 social, concerts}}`. Только при явном запросе изменить критерии; обычное обновление
-  рекомендаций читает их. Промпты общие для географий и двух вкладок.
+  рекомендаций читает их. Промпты общие для географий и трёх вкладок.
 - `POST /recommendations` — сохранить новый полный снимок выбранной вкладки.
 
 Личные события (`personal` в GET) хранятся отдельно и сохраняются при публикации.
@@ -79,6 +86,7 @@ Payload (даты/ссылки ниже — пример формы, не реа
   "expectedSnapshotId": null,
   "requestSummary": "Подборка по текущим критериям, Белград, сегодня–воскресенье",
   "notes": "Свежесть агрегаторов, покрытие Telegram, web и ограничения",
+  "rejectedItems": [],
   "items": []
 }
 ```
@@ -115,13 +123,13 @@ timestamp. Дата начала items должна входить в перио
 перечитать соответствующий GET, пересмотреть affected selection, новый POST.
 Не менять live SQLite напрямую. Повтор того же UUID/payload идемпотентен даже после
 появления более нового снимка; повтор другого payload с тем же UUID отклоняется.
-Старые снимки сохраняются, страница показывает последний; две вкладки независимы.
+Старые снимки сохраняются, страница показывает последний; три вкладки независимы.
 После POST проверить `snapshot.id` в GET, counts и дату `updatedAt` (серверное время).
 
 ## Полный список Telegram из Knowledge
 
 `GET /recommendations/sources?scopeId=belgrade` даёт тот же локальный список, который
-показан в настройках страницы: `telegram`, `other`, `additional`, ревизию Knowledge
+показан в настройках страницы: `telegram`, `other`, `additional`, `venues`, `venueWarning`, ревизию Knowledge
 и `warning`. Telegram получен из всех shards канонического manifest по фильтру
 коллекции, локальные исключения помечены enabled=false. Использовать полный
 telegram-массив как актуальный перечень; при warning не считать пустой ответ
@@ -155,9 +163,15 @@ platform=telegram, domains содержит activities, roles содержит a
 
 `telegram_monitoring_posts` принимает `channels: ["@username", "https://t.me/…"]`
 и communityIds. Для Knowledge-источников без local mapping использовать channels.
-Публичные группы `telegram_kind=group` — отдельные reference-источники; чтение только
-доступным разрешённым средством, не auto-join. Их недоступность раскрывать отдельно,
-не называть группой непрочитанный публичный канал.
+Дополнить каналы публичными группами из `activity-telegram-monitoring` с теми же
+enabled/domain/role/scope фильтрами и явно указанным
+`access.method=personal_radar_mcp`, `access.tool=telegram_read_messages`.
+Группы с manual/legacy-доступом не включать автоматически. Читать разрешённым
+rich/group-capable reader без auto-join, локальный `telegram_monitoring_posts`
+поддерживает публичные группы. Недоступность раскрывать отдельно.
+Для Кишинёва до scoring/сохранения проверять:
+CC_151 — подтверждённый язык события и аудитория по текущему профилю; FRIENDS —
+конкретные офлайн-занятия; VoleiNet — открытые игры с проверкой уровня и отмен.
 
 Границы publication/message IDs, snapshots, `truncated`, checkpoints, FloodWait и
 review/import описаны в репозиторном `skills/digest/references/workflow.md`, секции
@@ -170,14 +184,22 @@ watermarks; не продвигать их через непрочитанные
 
 Bootstrap даёт актуальные source IDs, provider capabilities и runs. Afisha берёт
 все страницы общего `/ru`; startDate/endDate не являются его серверным фильтром.
-Для рекомендаций отдельно исключать раздел «Экскурсии» по section/rawCategory,
-а не любое слово «экскурсия» в тексте похода. Для festivals в AllEvents учитывать категории festivals и food-drinks наряду
+При HTTP 403 использовать [Afisha fallback](afisha-fallback.md): `@afishars`
+для текущего дня и отдельный усиленный web search для будущих дат запроса.
+Исключения категорий применять по актуальному профилю и реальным section/rawCategory,
+а не случайному слову в тексте. Для festivals в AllEvents учитывать категории festivals и food-drinks наряду
 с music/concerts/comedy; не ограничивать годовую выгрузку только музыкой.
 AllEvents поддерживает date/category
 plan; при сочетании недели и года можно выполнить один широкий подтверждённый
 проход и отобрать локально, учитывая page cap, warnings и заявленное покрытие.
 Если широкий план обрезан, дополнить более узкими ranges/categories или web,
 не выдавать ограниченную выгрузку за полный годовой каталог.
+
+Для Кишинёва включать также enabled web-search источники из scoped Knowledge,
+которые возвращаются в `/recommendations/sources` (`other`, `method=web`):
+#diez и E-Tineret. Применять [правила языка, возраста и релевантности](../../../../personal-radar/workflows/chisinau-activity-monitoring.md).
+KEDEM/InterNations с `enabled=false`, role=reference — явный резерв,
+не обходить их автоматически как активные источники.
 
 Web domains получать по `provider.webSearchLlm` и актуальным URL metadata;
 Meetup.com — обязательный поиск для социальных/групповых активностей, если доступен.
@@ -187,3 +209,65 @@ Meetup.com — обязательный поиск для социальных/�
 Проверять оригинал, не брать дату индексации за дату мероприятия.
 Поисковые receipts/query-summary, canonical import и отдельный Telegram import
 выполнять штатными путями digest. Не хранить источники в новом отдельном списке.
+
+
+## Концертные площадки и организаторы
+
+Для музыкальной и гастрольной программы выполнять [общий концертный поиск](concert-search.md).
+`venues` читается из разрешённых members коллекций `belgrade-live-venues` и
+`belgrade-live-organizers` всех локальных source shards и полных record indexes.
+`venue.kind` отличает площадку от организатора; metadata передаёт приоритет,
+специализацию, aliases, searchDomains, тип страницы и предыдущий статус проверки.
+`venueWarning` не отменяет доступный Telegram/обычные агрегаторы, но означает
+неподтверждённое покрытие площадок. API не выполняет поиск или catalog-sync.
+
+## Текущая и следующая неделя, выбор города
+
+Для `kind=next-week` сервер возвращает полный следующий понедельник–воскресенье
+в `scope.timezone`. Это отдельный snapshot с собственным `expectedSnapshotId`;
+публиковать через тот же POST, используя даты свежего GET. API/schema допускают
+`week|next-week|concerts-2026`. Переход декабря/января не ограничивает недельные
+вкладки 2026 годом. Смена недели меняет серверный period; старые даты не переносятся.
+
+При запросе текущей недели заодно собрать следующую из одного потока: объединить
+диапазоны, один раз прочитать источники, скрытое/дубли и scoring обработать один раз,
+затем разделить кандидатов по датам и сохранить два независимых снимка. Годовые
+концерты могут пересекаться с обеими неделями. Для дозагрузки использовать границы
+и snapshots, не читать заново уже покрытый диапазон ради второй вкладки.
+
+Верхний переключатель UI передаёт `scopeId` всем GET/POST рекомендаций и источников.
+Кишинёв: `chisinau`, `MD`, `Chisinau`, `Europe/Chisinau`. Промпты/вкус общие; снимки,
+скрытое, избранное и личные события раздельны по scope. Telegram-фильтр использует
+country/city metadata Knowledge (Serbia/RS, Moldova/MD); старые каналы без геотегов
+остаются только в RS. Для новой страны отсутствие источников — пробел подключения,
+не повод использовать белградскую афишу. Кандидаты из исследовательского отчёта
+не становятся подписками без отдельного подключения.
+
+
+### Каталог Молдовы и новые пути Knowledge
+
+Папки `knowledge/sources/aggregators_activity/{serbia,moldova}` и
+`knowledge/sources/telegram/{serbia_activity,moldova_activity}` служат навигацией.
+Выбор источников выполняется по IDs, roles, enabled и metadata country/city через
+manifest/shards, без предположения о плоском расположении YAML. Остальные Telegram
+остаются на верхнем уровне; это не даёт им роль activity_monitoring.
+`/recommendations/sources?scopeId=chisinau` включает MD Telegram, подключённые
+агрегаторы и web-first MD источники из Knowledge. Профиль, категории sport/walks/social/concerts
+и реакции общие; языковые предпочтения задаёт текущий профиль. Web-first записи не обещают полный parser.
+Технические возможности и ограничения: `docs/moldova-connectors.md`.
+
+Для Telegram задавать `timeZone` выбранной scope (MD: `Europe/Chisinau`), чтобы границы публикаций не считались по Белграду.
+
+## Отклонённые оценённые события
+
+`POST /recommendations` также принимает `rejectedItems` (до 2000): тот же формат,
+что `items`, плюс обязательный `rejectionReason` (1–2000 символов). Поле опционально
+для совместимости со старыми снимками. В новом сборе передавать его явно, даже
+пустым. Это полный список содержательно оценённых отказов текущего прохода,
+не сырой архив и не список технических ошибок. Сохранять оценки и причины до
+финального отбора, чтобы отказы не терялись. Пользовательские hidden и дубли сюда
+не попадают; ограничения периода/группы и фильтр скрытого действуют на оба списка.
+GET возвращает `rejected` для модалки и `snapshot.rejectedItems`. На клиенте список
+разделён по локальным дням выбранного периода; календарные UI-фильтры его не меняют.
+Избранная/восстановленная карточка, уже вернувшаяся в календарь, в `rejected` не дублируется.
+Старые снимки не содержат историю отказов: не восстанавливать её догадками.

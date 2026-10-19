@@ -49,7 +49,12 @@ function input(id: string) {
 }
 describe("canonical ingestion", () => {
   it("seeds sources without secrets or invented connection success", () => {
-    expect(store.scopes()).toHaveLength(2);
+    expect(
+      store
+        .scopes()
+        .map((scope) => scope.id)
+        .sort(),
+    ).toEqual(["belgrade", "chisinau"]);
     expect(store.sources().length).toBeGreaterThan(15);
     expect(store.sources().every((s) => s.status !== "connected")).toBe(true);
   });
@@ -319,7 +324,7 @@ describe("canonical ingestion", () => {
       "future-belgrade",
     );
     expect(store.filterRulesView().pastEventsByScope).toEqual({
-      serbia: 2,
+      chisinau: 0,
       belgrade: 1,
     });
   });

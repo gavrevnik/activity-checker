@@ -10,6 +10,7 @@ import {
   personalRecommendationInputSchema,
   type PersonalRecommendation,
   recommendationInputSchema,
+  recommendationKindSchema,
   recommendationPeriod,
   recommendationPromptsSchema,
   type RecommendationInput,
@@ -23,6 +24,20 @@ import {
   type HiddenRecommendation,
   type FavoriteRecommendation,
 } from "../shared/recommendations.js";
+
+// Different performances of the same programme on one day are separate sessions.
+const sessionIdentityKeys = (
+  item: Parameters<typeof recommendationIdentityKeys>[0],
+  timeZone: string,
+) => {
+  const start =
+    item.startAt.length === 10
+      ? item.startAt
+      : new Date(item.startAt).toISOString();
+  return recommendationIdentityKeys(item, timeZone).map(
+    (key) => `${start}|${key}`,
+  );
+};
 
 export class Recommendations {
   constructor(private store: Store) {}
@@ -305,13 +320,15 @@ export class Recommendations {
         .flatMap((row) => recommendationIdentityKeys(row.item, timeZone)),
     );
     const visible = (item: RecommendationSnapshot["items"][number]) =>
-      recommendationDay(item.startAt, timeZone) >= today &&
+      recommendationDay(item.startAt, timeZone) >=
+        (period.startDate > today ? period.startDate : today) &&
       recommendationDay(item.startAt, timeZone) <= period.endDate &&
-      (snapshot.kind === "week" || item.group === "concerts") &&
+      (snapshot.kind !== "concerts-2026" || item.group === "concerts") &&
       !recommendationExpired(item, now, timeZone) &&
       !recommendationIdentityKeys(item, timeZone).some((key) =>
         hiddenKeys.has(key),
       );
+    const rejectedItems = (snapshot.rejectedItems || []).filter(visible);
     const items = snapshot.items.filter(visible);
     const keys = new Set(
       items.flatMap((item) => recommendationIdentityKeys(item, timeZone)),
@@ -331,16 +348,24 @@ export class Recommendations {
           keys.add(key);
       }
     }
-    return { ...snapshot, items };
+    const acceptedKeys = new Set(
+      items.flatMap((item) => sessionIdentityKeys(item, timeZone)),
+    );
+    return {
+      ...snapshot,
+      items,
+      rejectedItems: rejectedItems.filter(
+        (item) =>
+          !sessionIdentityKeys(item, timeZone).some((key) =>
+            acceptedKeys.has(key),
+          ),
+      ),
+    };
   }
   settings(): RecommendationSettings {
-    const row = this.store.db
-      .prepare("SELECT value FROM settings WHERE key='recommendation-prompts'")
-      .get() as { value: string } | undefined;
-    return row
-      ? JSON.parse(row.value)
-      : { revision: 0, prompts: { ...defaultRecommendationPrompts } };
+    return this.store.recommendationPreferences();
   }
+
   saveSettings(input: unknown) {
     const data = z
       .object({
@@ -382,13 +407,15 @@ export class Recommendations {
   }
   view(scopeId: string, kind: RecommendationInput["kind"], now = new Date()) {
     const timeZone = this.store.scope(scopeId).timezone;
+    const snapshot = this.project(
+      this.latest(scopeId, kind),
+      now,
+      this.visibility(scopeId, now),
+    );
     return {
       settings: this.settings(),
-      snapshot: this.project(
-        this.latest(scopeId, kind),
-        now,
-        this.visibility(scopeId, now),
-      ),
+      snapshot,
+      rejected: snapshot?.rejectedItems || [],
       hidden: this.hidden(scopeId, now),
       favorites: this.favorites(scopeId, now),
       personal: this.personal(scopeId, now),
@@ -428,7 +455,7 @@ export class Recommendations {
       )
         throw Error("Период изменился; перечитайте текущие даты");
       if (
-        data.items.some(
+        [...data.items, ...(data.rejectedItems || [])].some(
           (item) =>
             recommendationDay(item.startAt, timeZone) < data.startDate ||
             recommendationDay(item.startAt, timeZone) > data.endDate ||
@@ -437,7 +464,15 @@ export class Recommendations {
         )
       )
         throw Error("Событие вне периода или группы рекомендаций");
-      const keys = data.items.map(
+      const allItems = [...data.items, ...(data.rejectedItems || [])];
+      const identities = new Set<string>();
+      for (const item of allItems) {
+        const itemKeys = sessionIdentityKeys(item, timeZone);
+        if (itemKeys.some((key) => identities.has(key)))
+          throw Error("Подборка содержит повторные события");
+        for (const key of itemKeys) identities.add(key);
+      }
+      const keys = allItems.map(
         (item) =>
           `${item.eventUrl || item.sourceUrl}|${item.startAt}|${item.title.trim().toLowerCase()}`,
       );
@@ -457,13 +492,17 @@ export class Recommendations {
     });
   }
 }
-export function registerRecommendationsApi(app: Express, store: Store) {
+export function registerRecommendationsApi(
+  app: Express,
+  store: Store,
+  knowledgeRoot?: string,
+) {
   const service = new Recommendations(store);
   app.get("/api/recommendations", (req, res) => {
     const query = z
       .object({
         scopeId: z.string().min(1),
-        kind: z.enum(["week", "concerts-2026"]).default("week"),
+        kind: recommendationKindSchema.default("week"),
       })
       .parse(req.query);
     res.json(service.view(query.scopeId, query.kind));
@@ -497,9 +536,10 @@ export function registerRecommendationsApi(app: Express, store: Store) {
     const scopeId = z.string().min(1).parse(req.query.scopeId);
     const items = [
       service.latest(scopeId, "week"),
+      service.latest(scopeId, "next-week"),
       service.latest(scopeId, "concerts-2026"),
     ].flatMap((snapshot) => snapshot?.items || []);
-    res.json(recommendationSearchSources(store, scopeId, items));
+    res.json(recommendationSearchSources(store, scopeId, items, knowledgeRoot));
   });
   app.put("/api/recommendations/settings", (req, res) =>
     res.json(service.saveSettings(req.body)),

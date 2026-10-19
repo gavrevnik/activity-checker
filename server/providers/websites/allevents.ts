@@ -140,6 +140,7 @@ type Selection = {
   categories: string[];
 };
 type Preview = {
+  geography: string;
   id: string;
   sourceId: string;
   expiresAt: number;
@@ -190,6 +191,8 @@ function selectionKey(selected: Selection) {
 }
 function previewRequestKey(ctx: ProviderContext, options: SyncOptions) {
   return JSON.stringify({
+    scopeId: ctx.scope.id,
+    url: ctx.source.url,
     sourceId: ctx.source.id,
     keyword: ctx.source.keyword,
     startDate: options.startDate || "",
@@ -198,6 +201,9 @@ function previewRequestKey(ctx: ProviderContext, options: SyncOptions) {
   });
 }
 function validateSource(ctx: ProviderContext) {
+  const city = ctx.scope.id;
+  if (city !== "belgrade" && city !== "chisinau")
+    throw new Error("AllEvents: поддерживаются Белград и Кишинёв.");
   const url = new URL(ctx.source.url);
   if (
     url.protocol !== "https:" ||
@@ -205,16 +211,16 @@ function validateSource(ctx: ProviderContext) {
     url.port ||
     url.username ||
     url.password ||
-    !["/belgrade/all", "/belgrade/all/"].includes(url.pathname) ||
+    ![`/${city}/all`, `/${city}/all/`].includes(url.pathname) ||
     url.search
   )
-    throw new Error("AllEvents: укажите https://allevents.in/belgrade/all");
-  if (ctx.scope.id !== "belgrade")
-    throw new Error("AllEvents: адаптер поддерживает только Белград.");
+    throw new Error(
+      `AllEvents: укажите https://allevents.in/${city}/all для выбранного города.`,
+    );
+  return city;
 }
 const connect = (ctx: ProviderContext) => {
-  validateSource(ctx);
-  return connectAllEvents();
+  return connectAllEvents(validateSource(ctx));
 };
 function canonicalCategory(tags: string[]) {
   if (tags.some((tag) => /music|concert|party|edm|dance/.test(tag)))
@@ -256,6 +262,19 @@ export function parseAllEventsEvent(
     .slice(0, 50);
   const eventUrl = safeUrl(event.event_url || event.share_url, "allevents.in");
   if (!eventUrl) throw new Error("AllEvents: некорректная ссылка события.");
+  const cityKey = (value: string) =>
+    value.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+  const eventCity = cityKey(text(event.venue?.city));
+  const allowedCities =
+    ctx.scope.id === "chisinau"
+      ? ["chisinau", "кишинев", "кишинёв"]
+      : ["belgrade", "beograd", "белград", "београд"];
+  if (
+    ctx.scope.id === "chisinau" &&
+    eventCity &&
+    !allowedCities.includes(eventCity.split(",")[0].trim())
+  )
+    throw new Error("AllEvents: карточка относится к другому городу.");
   const organizer = text(event.organizer?.name);
   const description = [
     text(event.short_description),
@@ -269,8 +288,8 @@ export function parseAllEventsEvent(
     type: "Event",
     title,
     description,
-    country: "RS",
-    city: "Belgrade",
+    country: ctx.scope.country,
+    city: ctx.scope.city || "",
     category: canonicalCategory(tags),
     rawCategory: tags.join(", "),
     tags,
@@ -471,7 +490,7 @@ async function preparePreview(
       {
         label: "Первая страница",
         value: canReuseEmbedded
-          ? "взята из HTML /belgrade/all"
+          ? `взята из HTML /${ctx.scope.id}/all`
           : "получена API для выбранных фильтров",
       },
       { label: "Пауза", value: "случайно 2–3 секунды" },
@@ -486,6 +505,7 @@ async function preparePreview(
     ],
   };
   const preview: Preview = {
+    geography: JSON.stringify([ctx.scope.id, ctx.source.url]),
     id,
     sourceId: ctx.source.id,
     expiresAt,
@@ -514,11 +534,11 @@ async function exactPreview(ctx: ProviderContext, options: SyncOptions) {
 export default defineProvider(
   {
     id: "allevents",
-    name: "AllEvents · Belgrade",
+    name: "AllEvents · Belgrade / Chisinau",
     group: "API Агрегаторы",
     providerType: "Website/Aggregator",
     supportedEntityTypes: ["Event"],
-    supportedScopes: ["belgrade"],
+    supportedScopes: ["belgrade", "chisinau"],
     implemented: true,
     mode: "ingestion",
     configFields: ["url", "keyword"],
@@ -526,9 +546,11 @@ export default defineProvider(
     credentials: [],
     manualSyncOnly: true,
     requiresSyncConfirmation: true,
-    description: "Предстоящие события Белграда с фильтром дат и категорий.",
+    description:
+      "Предстоящие события Белграда и Кишинёва с фильтром дат и категорий.",
     docs: [
       { label: "Все события Белграда", url: `${origin}/belgrade/all` },
+      { label: "Все события Кишинёва", url: `${origin}/chisinau/all` },
       { label: "Условия использования", url: `${origin}/conditions` },
     ],
     steps: [
@@ -551,7 +573,11 @@ export default defineProvider(
       const preview = options.previewId
         ? previews.get(options.previewId)
         : undefined;
-      if (!preview || preview.sourceId !== ctx.source.id)
+      if (
+        !preview ||
+        preview.sourceId !== ctx.source.id ||
+        preview.geography !== JSON.stringify([ctx.scope.id, ctx.source.url])
+      )
         throw new Error(
           "AllEvents: сначала откройте Sync и дождитесь точного предпросмотра страниц.",
         );

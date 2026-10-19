@@ -18,7 +18,7 @@
     "apify:tool": "node --import tsx scripts/apify-tool.ts",
     "apify:mcp": "node --import tsx scripts/apify-mcp.ts",
     "apify:import": "node --import tsx scripts/apify-import.ts",
-    "telegram:setup": "uv venv .venv-telegram --python 3.12 && uv pip install --python .venv-telegram/bin/python -r requirements-telegram.txt",
+    "telegram:setup": "node scripts/telegram-setup.mjs",
     "telegram:auth": "node --import tsx scripts/telegram-tool.ts --authorize",
     "telegram:tool": "node --import tsx scripts/telegram-tool.ts",
     "telegram:mcp": "node --import tsx scripts/telegram-mcp.ts",
@@ -46,7 +46,15 @@
     "preresearch:mcp": "node ../personal-radar/connectors/bootstrap-ts.mjs",
     "telegram:batch": "node --import tsx scripts/telegram-batch.ts",
     "pretelegram:batch": "node ../personal-radar/connectors/bootstrap-ts.mjs",
-    "catalog:sync": "node --import tsx scripts/catalog-sync.ts"
+    "catalog:sync": "node --import tsx scripts/catalog-sync.ts",
+    "start:check": "node scripts/start-check.mjs",
+    "start:setup": "node --import tsx scripts/start-setup.ts",
+    "prestart:setup": "node ../personal-radar/connectors/bootstrap-ts.mjs",
+    "local:tool": "node --import tsx scripts/local-tool.ts",
+    "prelocal:tool": "node ../personal-radar/connectors/bootstrap-ts.mjs",
+    "browser:setup": "playwright install chromium",
+    "start:verify": "node --import tsx scripts/start-verify.ts",
+    "prestart:verify": "node ../personal-radar/connectors/bootstrap-ts.mjs"
   },
   "dependencies": {
     "@fontsource-variable/golos-text": "^5.3.0",
@@ -58,6 +66,7 @@
     "fast-xml-parser": "^5.3.0",
     "lucide-react": "^0.468.0",
     "node-ical": "^0.22.1",
+    "playwright": "1.64.1",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "zod": "^4.1.5"

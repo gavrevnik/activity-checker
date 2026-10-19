@@ -77,7 +77,20 @@ curl -s http://127.0.0.1:4318/api/import \
 
 SourceInput: `providerId`, `name`, `url`, `scopeId`, `enabled`, `language`, `audience`, `categories`, `priority` (0–100), `notes`, `format` (auto/json/jsonld/rss/ics), `keyword`, and provider-specific `minRating` (0–5 in 0.5 steps, default 4). Credentials are never accepted here. Unknown keys are rejected.
 
-The personal profile is a strict object with general `summary` and arrays `eventPreferences`, `communityPreferences`, `musicPreferences`, and `artists`. The UI presents them as four sections; artists remain a collapsed list inside music. It contains no credentials and lives in the singleton `user_profile` SQLite row. Saving the profile does not start a sync or send data to an LLM.
+The profile input is a strict object: `summary`, `eventPreferences`,
+`communityPreferences`, `musicPreferences`, `artists`, plus optional
+`additionalPreferences`, `recommendationPrompts` (four group prompts),
+`automaticFilters` (the existing filtering-rules schema) and
+`excludedTelegramChannels` (usernames without @). `GET /api/profile` returns all
+current fields and `updatedAt`; omit `updatedAt` in `PUT /api/profile`.
+The extra fields are optional for legacy clients; omitted additional text is
+preserved. Prompts, filters and Telegram exclusions project their existing settings
+and save transactionally with the profile; compatibility endpoints use the same
+settings. Core preferences remain in `user_profile`, no second profile storage.
+Any actual profile/settings change advances the recommendation settings revision,
+so a stale generation cannot publish. Saving does not call providers or an LLM.
+The UI describes actual static filters in “Дополнительно”; free text is not compiled
+into machine rules. Personal taste/language rules belong here, not in skills.
 
 AI scores use the 0–10 scale (`null` means no AI score); higher is more relevant. Migration 020 converts every existing numeric score from the previous 0–100 scale by dividing by ten, including overrides and archived snapshots. Canonical imports now reject values above 10.
 
@@ -156,10 +169,15 @@ Provider metadata in `/bootstrap` also describes how Sources should present an i
 
 ## Рекомендации
 
-`GET /api/recommendations?scopeId=belgrade&kind=week` (kind по умолчанию week)
+`/bootstrap.scopes` перечисляет только `belgrade` и `chisinau`. Новые настройки
+источников принимают только эти scope; прежние источники `serbia` перенесены в
+`belgrade` миграцией 041. Legacy scope сохраняется для исторических записей и
+внутренней архивации, но не предлагается отдельным флоу интерфейса.
+
+`GET /api/recommendations?scopeId=belgrade&kind=week` (kind по умолчанию week; допустимы week, next-week, concerts-2026)
 возвращает `{settings: {revision,prompts}, snapshot, period, timeZone, hidden, favorites}`.
 `kind=concerts-2026` выбирает отдельную годовую вкладку.
-`period` недели всегда сегодня–воскресенье в scope.timezone; годовой период —
+`period` для `week` — сегодня–воскресенье, для `next-week` — следующий понедельник–воскресенье в scope.timezone; годовой период —
 2026-01-01–2026-12-31. `snapshot=null`, если подборок ещё нет. Настройки общие
 для географий и вкладок. GET не запускает синхронизацию или модель.
 Видимый snapshot исключает скрытое, истёкшие события и даты начала раньше сегодня.
@@ -168,7 +186,7 @@ Provider metadata in `/bootstrap` also describes how Sources should present an i
 
 `POST /api/recommendations/hide` принимает `{scopeId,item}` с полной карточкой;
 возвращает `{id,item,hiddenAt}`. Скрытие постоянно до restore/окончания события,
-сохраняется в той же SQLite, действует на обе вкладки в scope. Повторное скрытие
+сохраняется в той же SQLite, действует на все вкладки в scope. Повторное скрытие
 того же сеанса не создаёт дубль. `GET /api/recommendations/hidden?scopeId=…` возвращает
 `{hidden:[{id,item,hiddenAt}]}`. `POST /api/recommendations/restore {scopeId,id}`
 возвращает `{restored:true}`; не позволяет восстановить истёкшее/чужой scope.
@@ -250,13 +268,27 @@ sourceName, sourceUrl, eventUrl, tags. До 500 строк; только HTTP(S)
 Каждая запись: `{id,name,url,description,method,enabled}`;
 method — `telegram|aggregator|web|snapshot`. Telegram выбирается по фильтру коллекции
 `activity-telegram-channel-monitoring` из всех JSONL source-shards manifest
-соседнего Personal Radar. Локальное исключение мониторинга задаёт enabled=false.
+соседнего Personal Radar, дополнительно публичные группы с теми же
+enabled/domain/role/scope фильтрами и явным
+`access.method=personal_radar_mcp`, `access.tool=telegram_read_messages`.
+Группы с manual или legacy channel-only доступом не включаются автоматически.
+Локальное исключение мониторинга задаёт enabled=false.
 `other` содержит подключённые агрегаторы событий и LLM Web по metadata, даже если
 у LLM Web отсутствует API-подключение. `additional` — уникальные сайты из sourceUrl
-и eventUrl последних снимков двух вкладок; ссылки на карты и Google Forms исключены.
+и eventUrl последних снимков трёх вкладок; ссылки на карты и Google Forms исключены.
 При ошибке Knowledge список Telegram пуст и warning объясняет недоступность;
 остальные источники доступны. Endpoint только читает локальные файлы/SQLite,
 не вызывает providers, не записывает данные и не запускает синхронизацию.
+
+### Подготовка Telegram на пустой базе
+
+`POST /api/recommendations/prepare-sources` с `{scopeId}` создаёт/обновляет только
+Community-метаданные включённых публичных Telegram-источников scoped Knowledge.
+Ответ `{created,updated,channels:[{communityId,username,title}]}` связывает
+usernames с IDs для штатного `/telegram-events/review`. Повтор не сбрасывает личные
+состояния. Нет provider RPC, auto-join или Knowledge write. При недоступном каталоге
+операция возвращает HTTP 400 с объяснением; полнота не заявляется. CLI-эквивалент:
+`npm run start:setup -- --prepare-sources --scope chisinau`.
 
 ### Личные события рекомендаций
 
@@ -266,3 +298,63 @@ method — `telegram|aggregator|web|snapshot`. Telegram выбирается п�
 - `PUT /api/recommendations/personal/state`: `{scopeId, id, deleted?: boolean, favorite?: boolean}`; требуется хотя бы одно изменение. `deleted=true` переносит в «Скрытое», false восстанавливает. Запись другой географии недоступна.
 
 Личные записи имеют `group=personal`, не получают AI-score, не принимаются через LLM-публикацию и не входят в кандидаты модели. `weekEndDate` задаётся сервером; после его окончания записи очищаются в существующей SQLite при штатной очистке/чтении. Отдельная миграция 037 не меняет путь базы. Скрытие рекомендаций и их предварительный фильтр работают по прежнему контракту.
+
+
+### Концертные источники рекомендаций
+
+`GET /api/recommendations/sources?scopeId=belgrade` сохраняет поля `telegram`,
+`other`, `additional`, `warning`, `knowledgeRevision` и добавляет:
+
+- `venues`: источники разрешённых коллекций `belgrade-live-venues` и
+  `belgrade-live-organizers` из локальных Knowledge indexes; для других scope — `[]`.
+- `venueWarning`: отдельная ошибка каталога площадок либо `null`, не отменяет Telegram.
+- Каждый элемент venues сохраняет обычные id/name/url/description/method=web/enabled,
+  а `venue` содержит kind (`venue|organizer`), priority (`P1|P2|P3`), eventTypes,
+  genres, aliases, searchDomains, pageType, calendarAvailability, checkedOn,
+  pages (`url`, `pageType`, `availability`, необязательный `publisherKind`
+  для ссылки на организатора). Тип страницы не гарантирует доступность.
+
+Локальные URL-дубли удаляются по stable ID/URL; разные площадки на одном домене
+не объединяются. Snapshot websites не дублируют уже показанные домены. Чтение
+каталога не вызывает сеть, providers, sync, импорт или изменение промптов.
+Все manifest/record paths проверяются внутри generated indexes, включая symlinks.
+
+
+`venue.afishaVenueUrl` (необязательная строка) — проверенная русская Afisha
+venue-page из canonical metadata.pages/locator. Клиент может передать её в
+Personal Radar `afisha_read_events` либо `sections[].venueUrl` у
+`afisha_read_events_batch`; это read-only чтение, а не смена URL локального source
+или автоматический импорт. В интерфейсе показывается отдельная ссылка на афишу.
+
+### Следующая неделя и Кишинёв
+
+`kind=next-week` использует тот же GET/schema/POST и календарные группы, что `week`,
+с отдельным latest snapshot и optimistic concurrency. `period` — следующий полный
+понедельник–воскресенье в timezone scope. GET исключает даты вне текущего period,
+POST требует его точного совпадения. Миграция 038 расширяет CHECK kind, сохраняя
+существующие snapshot ID/payload/updatedAt. Миграция 039 добавляет `chisinau`
+(MD, Chisinau, Europe/Chisinau); новых sources не создаёт. Настройки промптов общие.
+Источники `/recommendations/sources` берут ссылки всех трёх снимков; Telegram
+ограничен country/city metadata Knowledge. Записи без геотегов считаются legacy RS.
+
+
+Для `scopeId=chisinau` доступны `source-fest-md`, `source-iticket-md`,
+`source-afisha-mira`, `source-afisha-md`, `source-allevents-chisinau`. Последний
+использует прежний контракт AllEvents sync-plan/previewId/confirmed. Afisha.md
+синхронизируется отдельно через существующий anonymous renderer. `warnings`
+содержит ограничения частичных HTML/JS выдач. Web-first MD Knowledge records
+добавляются в `other` recommendations sources по roles и country/city metadata.
+Подробности: [коннекторы Молдовы](moldova-connectors.md).
+
+### Отклонённые рекомендации
+
+Снимок `POST /api/recommendations` принимает опциональный `rejectedItems` (до 2000).
+Карточка имеет тот же контракт, что `items`, плюс `rejectionReason` (1–2000 символов).
+Сюда модель сохраняет содержательно оценённые события, не прошедшие персональный
+score/критерии; дубли, скрытие пользователем и технические ошибки сюда не относятся.
+Оба массива проверяются на период/группу и дубли, в том числе между массивами.
+`GET /api/recommendations` дополнительно возвращает `rejected` и проецирует
+`snapshot.rejectedItems`: только текущий период, без истёкших/скрытых и карточек,
+вернувшихся в календарь через избранное/восстановление. Старыe payload без поля
+поддерживаются; история отказов в них отсутствует. Схема SQLite не меняется:
+массив хранится в JSON существующей таблицы `recommendation_snapshots`.

@@ -21,7 +21,11 @@ export const {
     resolve(
       process.env.ACTIVITY_DB || "../data/activity-checker/activity.sqlite",
     ),
-  pythonPath: resolve(root, ".venv-telegram/bin/python"),
+  pythonPath: resolve(
+    root,
+    ".venv-telegram",
+    process.platform === "win32" ? "Scripts/python.exe" : "bin/python",
+  ),
   sessionPath: resolve(
     root,
     "../data/activity-checker/telegram/activity-checker",

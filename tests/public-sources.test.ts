@@ -12,7 +12,10 @@ import belgradeBeat, {
 import afisha, { parseAfishaPage } from "../server/providers/websites/afisha";
 import { fetchText, fetchJson } from "../server/providers/http";
 import type { ProviderContext } from "../server/providers/types";
-vi.mock("@personal-radar/connectors/http", () => ({
+import { HttpResponseError } from "@personal-radar/connectors/http";
+import { SyncService } from "../server/sync";
+vi.mock("@personal-radar/connectors/http", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@personal-radar/connectors/http")>()),
   fetchText: vi.fn(),
   fetchJson: vi.fn(),
 }));
@@ -332,6 +335,33 @@ describe("public providers audit regressions", () => {
     expect(result.warnings).toContain(
       "Afisha.rs: до записи схлопнуто повторов по ID: 1.",
     );
+  });
+  it("reports a Cloudflare challenge without retrying or importing an incomplete Afisha feed", async () => {
+    vi.mocked(fetchJson)
+      .mockResolvedValueOnce(afishaPage([afishaEvent(1)], 2, 2))
+      .mockRejectedValueOnce(new HttpResponseError(403, true));
+    const before = store.entities();
+
+    await expect(new SyncService(store).run("source-afisha")).rejects.toThrow(
+      "Cloudflare требует проверку браузера (HTTP 403)",
+    );
+
+    expect(fetchJson).toHaveBeenCalledTimes(2);
+    expect(store.entities()).toEqual(before);
+    expect(store.source("source-afisha").lastError).toContain("Cloudflare");
+    expect(new SyncService(store).runs()[0]).toMatchObject({
+      status: "error",
+      fetched: 0,
+      created: 0,
+    });
+  });
+  it("does not label an ordinary Afisha HTTP failure as a browser challenge", async () => {
+    ctx.source = store.source("source-afisha");
+    const error = new HttpResponseError(403);
+    vi.mocked(fetchJson).mockRejectedValueOnce(error);
+
+    await expect(afisha.sync(ctx)).rejects.toBe(error);
+    expect(fetchJson).toHaveBeenCalledOnce();
   });
   it("parses Serbia Calendar dates and real city, filtering only when a city was requested", () => {
     const body = {

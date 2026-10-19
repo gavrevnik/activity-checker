@@ -44,9 +44,15 @@ import type { RawItem } from "./providers/types.js";
 import { providers, getProvider } from "./providers/registry.js";
 import {
   defaultUserProfile,
+  sampleAdditionalPreferences,
   upgradeLegacyUserProfile,
   upgradeUserProfileDefaults,
 } from "./profile.js";
+import { defaultRecommendationPrompts } from "../shared/recommendations.js";
+import {
+  readTelegramMonitoringSettings,
+  saveTelegramMonitoringSettings,
+} from "./telegram-monitoring-settings.js";
 const now = () => new Date().toISOString();
 const result = (): SyncResult => ({
   fetched: 0,
@@ -79,6 +85,8 @@ const canCollapseEvents = (a: NormalizedEntity, b: NormalizedEntity) =>
   b.type === "Event" &&
   a.country === b.country &&
   a.demo === b.demo &&
+  (!(a.knownIds.iticket_session || b.knownIds.iticket_session) ||
+    a.startAt === b.startAt) &&
   nameKey(a.title) === nameKey(b.title) &&
   nameKey(a.city) === nameKey(b.city) &&
   (!a.startAt ||
@@ -146,8 +154,15 @@ export class Store {
       throw e;
     }
   }
-  scopes(): Scope[] {
-    return this.db.prepare("SELECT * FROM scopes").all() as unknown as Scope[];
+  scopes(includeRetired = false): Scope[] {
+    // Retired scopes remain addressable for historical records, not new flows.
+    return this.db
+      .prepare(
+        includeRetired
+          ? "SELECT * FROM scopes"
+          : "SELECT * FROM scopes WHERE id IN ('belgrade','chisinau') ORDER BY CASE id WHEN 'belgrade' THEN 0 ELSE 1 END",
+      )
+      .all() as unknown as Scope[];
   }
   scope(id: string): Scope {
     const s = this.db.prepare("SELECT * FROM scopes WHERE id=?").get(id);
@@ -168,18 +183,90 @@ export class Store {
     }
     return {
       ...parsed.data,
+      additionalPreferences:
+        parsed.data.additionalPreferences ?? sampleAdditionalPreferences,
+      recommendationPrompts: this.recommendationPreferences().prompts,
+      automaticFilters: this.filterRules(),
+      excludedTelegramChannels: readTelegramMonitoringSettings(this.db)
+        .excludedChannels,
       updatedAt: row.updatedAt,
     };
+  }
+  recommendationPreferences() {
+    const row = this.db
+      .prepare("SELECT value FROM settings WHERE key='recommendation-prompts'")
+      .get() as { value: string } | undefined;
+    return row
+      ? (JSON.parse(row.value) as {
+          revision: number;
+          prompts: typeof defaultRecommendationPrompts;
+        })
+      : { revision: 0, prompts: { ...defaultRecommendationPrompts } };
   }
   saveProfile(input: UserProfileInput): UserProfile {
     const data = userProfileSchema.parse(input);
     const updatedAt = now();
+    const {
+      recommendationPrompts,
+      automaticFilters,
+      excludedTelegramChannels,
+      ...core
+    } = data;
+    const previousRow = this.db
+      .prepare("SELECT data FROM user_profile WHERE id='main'")
+      .get() as { data: string } | undefined;
+    const previousCore = previousRow ? JSON.parse(previousRow.data) : null;
+    if (core.additionalPreferences === undefined)
+      core.additionalPreferences =
+        previousCore?.additionalPreferences ?? sampleAdditionalPreferences;
+    const previous = this.recommendationPreferences();
+    const changed =
+      Boolean(
+        previousCore &&
+        JSON.stringify({
+          ...previousCore,
+          additionalPreferences:
+            previousCore.additionalPreferences ?? sampleAdditionalPreferences,
+        }) !== JSON.stringify(core),
+      ) ||
+      Boolean(
+        recommendationPrompts &&
+        JSON.stringify(previous.prompts) !==
+          JSON.stringify(recommendationPrompts),
+      ) ||
+      Boolean(
+        automaticFilters &&
+        JSON.stringify(this.filterRules()) !== JSON.stringify(automaticFilters),
+      ) ||
+      Boolean(
+        excludedTelegramChannels &&
+        JSON.stringify(
+          readTelegramMonitoringSettings(this.db).excludedChannels,
+        ) !== JSON.stringify(excludedTelegramChannels),
+      );
     this.transaction(() => {
+      if (changed)
+        this.db
+          .prepare(
+            "INSERT INTO settings(key,value) VALUES ('recommendation-prompts',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+          )
+          .run(
+            JSON.stringify({
+              revision: previous.revision + 1,
+              prompts: recommendationPrompts || previous.prompts,
+            }),
+          );
+      if (automaticFilters) this.saveFilterRules(automaticFilters);
+      if (excludedTelegramChannels)
+        saveTelegramMonitoringSettings(this.db, {
+          ...readTelegramMonitoringSettings(this.db),
+          excludedChannels: excludedTelegramChannels,
+        });
       this.db
         .prepare(
           "INSERT INTO user_profile (id,data,updatedAt) VALUES ('main',?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,updatedAt=excluded.updatedAt",
         )
-        .run(JSON.stringify(data), updatedAt);
+        .run(JSON.stringify(core), updatedAt);
       enqueueCatalogFeedback(
         this.db,
         "user_profile",
@@ -188,7 +275,7 @@ export class Store {
         data.musicPreferences,
       );
     });
-    return { ...data, updatedAt };
+    return this.profile();
   }
   private upgradeUserProfile() {
     const version = this.db
@@ -481,7 +568,8 @@ export class Store {
   saveSource(input: SourceInput, id: string = randomUUID()): Source {
     const s = sourceSchema.parse(input);
     getProvider(s.providerId);
-    this.scope(s.scopeId);
+    if (!this.scopes().some((scope) => scope.id === s.scopeId))
+      throw new Error("Источник должен относиться к Белграду или Кишинёву");
     if (
       s.url &&
       [...new URL(s.url).searchParams.keys()].some((k) =>
@@ -528,6 +616,7 @@ export class Store {
     return this.source(id);
   }
   seed() {
+    // Keep the legacy identity for historical snapshots and foreign keys.
     this.db
       .prepare("INSERT OR IGNORE INTO scopes VALUES (?,?,?,?,?,?)")
       .run("serbia", "Serbia", "RS", null, "Europe/Belgrade", 3601741311);
@@ -554,12 +643,44 @@ export class Store {
           providerId: p.id,
           name: p.name,
           url: p.defaultUrl || "",
-          scopeId: p.id === "serbia-travel" ? "serbia" : "belgrade",
-          enabled: ["manual", "allevents", "telegram"].includes(p.id),
+          scopeId:
+            p.supportedScopes.includes("belgrade") ||
+            p.supportedScopes.includes("*")
+              ? "belgrade"
+              : p.supportedScopes[0],
+          enabled: [
+            "manual",
+            "allevents",
+            "telegram",
+            "fest-md",
+            "iticket-md",
+            "afisha-mira",
+            "afisha-md",
+            "sporter-md",
+            "moldova-travel",
+            "frc-chisinau",
+          ].includes(p.id),
           priority: p.id === "manual" ? 90 : 50,
           language: p.id === "afisha" ? "ru" : "",
         },
         "source-" + p.id,
+      );
+    }
+    if (
+      !this.db
+        .prepare("SELECT 1 FROM sources WHERE id=?")
+        .get("source-allevents-chisinau")
+    ) {
+      this.saveSource(
+        {
+          providerId: "allevents",
+          name: "AllEvents · Chisinau",
+          url: "https://allevents.in/chisinau/all",
+          scopeId: "chisinau",
+          enabled: true,
+          priority: 50,
+        },
+        "source-allevents-chisinau",
       );
     }
   }
@@ -1282,9 +1403,7 @@ export class Store {
       }
       if (
         /\.(png|jpe?g|webp|gif|svg|woff2?)$/i.test(u.pathname) ||
-        ["schema.org", "www.schema.org"].includes(
-          u.hostname,
-        )
+        ["schema.org", "www.schema.org"].includes(u.hostname)
       )
         continue;
       if (this.sources().some((s) => canonicalUrl(s.url) === url)) continue;

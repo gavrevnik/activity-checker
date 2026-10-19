@@ -130,7 +130,7 @@ export const googlePlacesApi = defineProvider(
     group: "MCP",
     providerType: "Official Places API MCP",
     supportedEntityTypes: ["Place"],
-    supportedScopes: ["belgrade", "serbia"],
+    supportedScopes: ["belgrade"],
     implemented: true,
     mode: "discovery",
     configFields: ["scope", "keyword", "minRating"],

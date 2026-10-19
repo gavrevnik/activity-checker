@@ -32,7 +32,8 @@ export function autoArchivePastEvents(
   now = new Date(),
 ) {
   if (!readAutoArchiveSettings(store).enabled) return { archived: 0 };
-  const scopes = scopeId ? [store.scope(scopeId)] : store.scopes();
+  // Retiring a UI flow must not strand its existing events/digests in storage.
+  const scopes = scopeId ? [store.scope(scopeId)] : store.scopes(true);
   return store.transaction(() => ({
     archived: scopes.reduce(
       (total, scope) => {

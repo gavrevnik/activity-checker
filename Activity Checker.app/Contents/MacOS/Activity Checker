@@ -13,15 +13,33 @@ LOG_FILE="${RUNTIME_DIR}/web.log"
 PID_FILE="${RUNTIME_DIR}/web.pid"
 
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+# start records the actual Node executable, including nvm/fnm installations.
+if [[ -f "${RUNTIME_DIR}/node-bin" ]]; then
+  IFS= read -r NODE_BIN < "${RUNTIME_DIR}/node-bin" || true
+  if [[ "${NODE_BIN:-}" == /* && -x "${NODE_BIN:-}" ]]; then
+    export PATH="${NODE_BIN:h}:${PATH}"
+  fi
+fi
 NPM_BIN="$(command -v npm || true)"
 
 server_ready() {
-  /usr/bin/curl -fsS --max-time 1 "${HEALTH_URL}" 2>/dev/null |
+  /usr/bin/curl --noproxy '*' -fsS --max-time 1 "${HEALTH_URL}" 2>/dev/null |
     /usr/bin/grep -q '"app":"activity-checker"'
 }
 
+open_service() {
+  local target_url="${INTERNAL_URL}"
+  # Prefer the friendly URL only when its loopback route reaches this app.
+  if /usr/bin/curl --noproxy '*' --resolve 'activity-checker.localhost:80:127.0.0.1' \
+    -fsS --connect-timeout 1 --max-time 2 "${PUBLIC_URL}api/health" 2>/dev/null |
+    /usr/bin/grep -q '"app":"activity-checker"'; then
+    target_url="${PUBLIC_URL}"
+  fi
+  /usr/bin/open "${target_url}"
+}
+
 if server_ready; then
-  /usr/bin/open "${PUBLIC_URL}"
+  open_service
   exit 0
 fi
 
@@ -48,7 +66,7 @@ print -r -- "$!" >"${PID_FILE}"
 
 for _ in {1..300}; do
   if server_ready; then
-    /usr/bin/open "${PUBLIC_URL}"
+    open_service
     exit 0
   fi
   /bin/sleep 0.1

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { recommendationPromptsSchema } from "./recommendations.js";
 
 export const entityTypes = ["Event", "Place", "Community"] as const;
 export type EntityType = (typeof entityTypes)[number];
@@ -174,6 +175,16 @@ export interface Scope {
   osmAreaId: number | null;
 }
 export interface SyncResult {
+  coverage?: {
+    complete: boolean;
+    discoveryComplete: boolean;
+    processed: number;
+    total: number;
+    remaining: number;
+    unresolved: number;
+    requests: number;
+    resumed: boolean;
+  };
   fetched: number;
   created: number;
   updated: number;
@@ -302,6 +313,18 @@ export const userProfileSchema = z
     communityPreferences: z.array(profileItem).max(50),
     musicPreferences: z.array(profileItem).max(50),
     artists: z.array(z.string().trim().min(1).max(200)).max(200),
+    additionalPreferences: z.string().trim().max(30000).optional(),
+    recommendationPrompts: recommendationPromptsSchema.optional(),
+    automaticFilters: filteringRulesSchema.optional(),
+    excludedTelegramChannels: z
+      .array(
+        z
+          .string()
+          .trim()
+          .regex(/^[a-zA-Z0-9_]+$/),
+      )
+      .max(1000)
+      .optional(),
   })
   .strict();
 export type UserProfileInput = z.input<typeof userProfileSchema>;

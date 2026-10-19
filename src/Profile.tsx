@@ -8,7 +8,16 @@ import {
   UserRound,
   UsersRound,
 } from "lucide-react";
-import type { UserProfile, UserProfileInput } from "../shared/model";
+import {
+  defaultFilteringRules,
+  type FilteringRules,
+  type UserProfile,
+  type UserProfileInput,
+} from "../shared/model";
+import {
+  profileFilterDescriptions,
+  disableSampleFilters,
+} from "../shared/profile-filters";
 import { Busy, Button } from "./components";
 
 interface Draft {
@@ -17,6 +26,9 @@ interface Draft {
   communityPreferences: string;
   musicPreferences: string;
   artists: string;
+  additionalPreferences: string;
+  automaticFilters: FilteringRules;
+  excludedTelegramChannels: string;
 }
 
 const listText = (items: string[]) =>
@@ -32,6 +44,9 @@ const toDraft = (profile: UserProfile): Draft => ({
   communityPreferences: listText(profile.communityPreferences),
   musicPreferences: listText(profile.musicPreferences),
   artists: profile.artists.join("\n"),
+  additionalPreferences: profile.additionalPreferences || "",
+  automaticFilters: profile.automaticFilters || defaultFilteringRules,
+  excludedTelegramChannels: (profile.excludedTelegramChannels || []).join("\n"),
 });
 const toInput = (draft: Draft): UserProfileInput => ({
   summary: draft.summary.trim(),
@@ -39,6 +54,11 @@ const toInput = (draft: Draft): UserProfileInput => ({
   communityPreferences: parseList(draft.communityPreferences),
   musicPreferences: parseList(draft.musicPreferences),
   artists: parseList(draft.artists),
+  additionalPreferences: draft.additionalPreferences.trim(),
+  automaticFilters: draft.automaticFilters,
+  excludedTelegramChannels: parseList(draft.excludedTelegramChannels).map(
+    (item) => item.replace(/^@/, ""),
+  ),
 });
 
 function ProfileField({
@@ -82,18 +102,20 @@ export function Profile({
   profile,
   busy,
   onSave,
+  embedded = false,
 }: {
+  embedded?: boolean;
   profile: UserProfile;
   busy: boolean;
   onSave: (profile: UserProfileInput) => Promise<void>;
 }) {
   const [draft, setDraft] = useState(() => toDraft(profile));
   const [artistsOpen, setArtistsOpen] = useState(false);
+  const [saveError, setSaveError] = useState("");
   useEffect(() => setDraft(toDraft(profile)), [profile]);
   const input = useMemo(() => toInput(draft), [draft]);
   const original = useMemo(() => {
-    const { updatedAt: _updatedAt, ...value } = profile;
-    return value;
+    return toInput(toDraft(profile));
   }, [profile]);
   const changed = JSON.stringify(input) !== JSON.stringify(original);
   const set = (key: keyof Draft) => (value: string) =>
@@ -109,18 +131,23 @@ export function Profile({
       className="profile-page"
       onSubmit={(event) => {
         event.preventDefault();
-        if (changed && !busy) void onSave(input);
+        if (changed && !busy) {
+          setSaveError("");
+          void onSave(input).catch((error) =>
+            setSaveError((error as Error).message),
+          );
+        }
       }}
     >
       <div className="page-heading profile-heading">
         <div>
           <div className="heading-title">
             <UserRound size={24} />
-            <h1>Мой профиль</h1>
+            {embedded ? <h2>Личные предпочтения</h2> : <h1>Мой профиль</h1>}
           </div>
           <p>
-            Общий контекст и предпочтения для поиска событий и сообществ. Позже
-            их можно будет передавать LLM для ранжирования найденного.
+            Ваши интересы, языки и музыкальные предпочтения. Модель учитывает их
+            при следующем обновлении рекомендаций.
           </p>
         </div>
         <div className="actions">
@@ -138,15 +165,18 @@ export function Profile({
         </div>
       </div>
 
+      {saveError && (
+        <p className="error-text" role="alert">
+          {saveError}
+        </p>
+      )}
       <section className="profile-intro">
         <Sparkles size={18} />
         <div>
           <strong>Как использовать этот профиль</strong>
           <p>
-            Все четыре блока раскрываются по объёму текста. В списках — один
-            приоритет на строку; маркеры можно добавлять или не добавлять.
-            Сейчас профиль хранится только локально и ещё не запускает
-            автоматическую AI-фильтрацию.
+            В списках — один интерес на строку. После сохранения попросите
+            модель обновить рекомендации, чтобы применить изменения.
           </p>
         </div>
       </section>
@@ -214,7 +244,7 @@ export function Profile({
             label="Музыкальные предпочтения"
             value={draft.musicPreferences}
             onChange={set("musicPreferences")}
-            hint="Стартовое заполнение составлено по артистам из content-checker."
+            hint="Жанры, настроение и предпочтения для концертных рекомендаций."
             rows={6}
           />
           <details
@@ -222,13 +252,13 @@ export function Profile({
             onToggle={(event) => setArtistsOpen(event.currentTarget.open)}
           >
             <summary>
-              <span>Артисты из content-checker</span>
+              <span>Любимые артисты</span>
               <span className="badge">{input.artists.length}</span>
             </summary>
             <div>
               <p>
-                Исходный список скопирован из музыкального seed соседнего
-                проекта. Здесь его можно независимо дополнить или сократить.
+                Добавьте любимых исполнителей — модель учтёт их при подборе
+                концертов.
               </p>
               <ProfileField
                 key={artistsOpen ? "artists-open" : "artists-closed"}
@@ -241,10 +271,77 @@ export function Profile({
             </div>
           </details>
         </section>
+        <section className="profile-card">
+          <header>
+            <div>
+              <h2>Дополнительно</h2>
+              <p>
+                Языки, исключения, правила включения и автоматические фильтры.
+              </p>
+            </div>
+          </header>
+          <ProfileField
+            label="Дополнительные условия рекомендаций"
+            value={draft.additionalPreferences}
+            onChange={set("additionalPreferences")}
+            rows={10}
+            hint="Это ваши условия. Можно изменить или удалить любые предпочтения образца, включая приоритет русского языка."
+          />
+          <div className="profile-filter-options">
+            <h3>Автоматические фильтры</h3>
+            <p className="muted">
+              Включённые условия исключают карточки до оценки моделью.
+              Отключение снимает ограничение; исходные данные сохраняются.
+            </p>
+            {profileFilterDescriptions(draft.automaticFilters).map(
+              ({ code, text }) => (
+                <label key={code}>
+                  <input
+                    type="checkbox"
+                    checked={draft.automaticFilters[code].enabled}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        automaticFilters: {
+                          ...current.automaticFilters,
+                          [code]: {
+                            ...current.automaticFilters[code],
+                            enabled: event.target.checked,
+                          },
+                        },
+                      }))
+                    }
+                  />
+                  <span>{text}</span>
+                </label>
+              ),
+            )}
+            <Button
+              onClick={() =>
+                setDraft((current) => ({
+                  ...current,
+                  automaticFilters: disableSampleFilters(
+                    current.automaticFilters,
+                  ),
+                  excludedTelegramChannels: "",
+                }))
+              }
+            >
+              Отключить фильтры образца и исключения каналов
+            </Button>
+          </div>
+          <ProfileField
+            label="Не читать эти Telegram-каналы"
+            value={draft.excludedTelegramChannels}
+            onChange={set("excludedTelegramChannels")}
+            rows={3}
+            hint="Один username на строку. Пустой список разрешает все включённые источники выбранного города; это не подписка и не вступление в группы."
+          />
+        </section>
       </div>
 
       <p className="profile-updated">
-        Последнее сохранение: {updatedAt} · локальная SQLite
+        Последнее сохранение: {updatedAt} · сохранено на этом компьютере
       </p>
     </form>
   );

@@ -389,3 +389,11 @@ describe("Separate reviewed Telegram events", () => {
     );
   });
 });
+
+it("uses Chisinau publication timezone for date-only future events near midnight", () => {
+  const args = input();
+  args.monitoring.range.timeZone = "Europe/Chisinau";
+  args.selections[0] = { ...args.selections[0], country: "MD", city: "Chisinau", startAt: "2026-10-02", endAt: "" };
+  // 00:30 in Chisinau on October 3, while it is still October 2 in Belgrade.
+  expect(() => events.save(args, new Date("2026-10-02T21:30:00Z"))).toThrow("Прошедшее");
+});

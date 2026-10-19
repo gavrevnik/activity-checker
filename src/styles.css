@@ -2759,7 +2759,7 @@ dialog.drawer {
   align-items: center;
   flex-wrap: wrap;
   gap: 10px;
-  margin: 20px 0 4px;
+  margin: 20px 0 24px;
 }
 .rec-updated .button {
   padding: 6px 10px;
@@ -2767,6 +2767,7 @@ dialog.drawer {
 }
 .rec-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin: 24px 0 18px;
   border-bottom: 1px solid var(--line);
@@ -2777,6 +2778,9 @@ dialog.drawer {
   align-items: center;
   padding: 12px 16px;
   border-bottom: 2px solid transparent;
+}
+.rec-tabs svg {
+  flex-shrink: 0;
 }
 .rec-tabs .active {
   color: var(--green);
@@ -3310,4 +3314,55 @@ dialog.drawer {
 .rec-personal {
   --rec-color: #a63e68;
   --rec-soft: #fff0f5;
+}
+
+/* Recommendation controls also fit narrow screens without icon-only labels. */
+.rec-actions {
+  flex-wrap: wrap;
+}
+.rec-profile-tabs {
+  margin-top: 0;
+}
+.rec-profile-content .profile-heading {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.rec-profile-content .profile-heading .actions {
+  flex-wrap: wrap;
+}
+.rec-rejected-list > section + section {
+  margin-top: 28px;
+}
+.rec-rejected-list > section > h3 {
+  font-size: 16px;
+}
+.rec-rejected-list > section > h3::first-letter {
+  text-transform: uppercase;
+}
+.rec-rejection-reason {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 8px 4px 0;
+}
+
+.profile-filter-options {
+  display: grid;
+  gap: 12px;
+  margin: 20px 0;
+}
+.profile-filter-options label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.profile-filter-options input {
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+.profile-filter-options .button {
+  justify-self: start;
+  white-space: normal;
+  text-align: left;
 }

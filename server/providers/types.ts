@@ -24,6 +24,16 @@ export interface ProviderContext {
 export interface FetchResult {
   items: RawItem[];
   warnings?: string[];
+  coverage?: {
+    complete: boolean;
+    discoveryComplete: boolean;
+    processed: number;
+    total: number;
+    remaining: number;
+    unresolved: number;
+    requests: number;
+    resumed: boolean;
+  };
 }
 export interface ActivityProvider extends ProviderInfo {
   connectionStatus(ctx: ProviderContext): Connection;

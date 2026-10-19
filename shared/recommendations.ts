@@ -15,16 +15,18 @@ export const groupLabels: Record<RecommendationGroup, string> = {
   social: "Социальные события",
   concerts: "Концерты и фестивали",
 };
+// Search mechanics only. All personal tastes, languages and exceptions live in /api/profile.
 export const defaultRecommendationPrompts = {
   sport:
-    "Ищи падел и сквош для новичков, бег и велосипедные активности в Белграде и окрестностях. Проверяй доступность новичкам, дату, время, место, регистрацию и формат участия. Предпочитай совместные тренировки и возможность познакомиться с людьми.",
+    "Ищи спортивные активности по текущему профилю. Проверяй уровень подготовки, дату, место и условия участия.",
   walks:
-    "Ищи хайкинг, трекинг, групповые прогулки и посещение интересных мест на природе рядом с Белградом. Проверяй маршрут, сложность, место и время встречи, транспорт и регистрацию. В Afisha.rs исключай раздел «Экскурсии»: массовые обзорные туры не подменяют природные прогулки.",
+    "Ищи прогулки, поездки и активности на природе по текущему профилю. Проверяй маршрут, сложность, транспорт и регистрацию.",
   social:
-    "Приоритет — возможность общаться и участвовать в группе: разговорные клубы, караоке, совместные занятия и встречи для знакомства. Простое посещение стендапа не является социальным событием. Учитывай профиль и feedback-summary из ai-events-review; квизы и настолки сохраняют низкий приоритет. Проверяй язык общения и возможность прийти одному.",
+    "Ищи социальные и профессиональные встречи по текущему профилю. Проверяй язык программы, участие в группе и возможность прийти одному.",
   concerts:
-    "Ищи музыкальные концерты, стендапы известных персон, творческие встречи и фестивали, включая музыкальные, гастрономические и фестивали еды. Предлагай русскоязычных и международных исполнителей; исключай музыкальную и разговорную программу на балканских языках. Определяй язык по подтверждённой программе, а не по национальности или названию. Гастрономические и другие фестивали, доступные без знания языка, не исключай за местное происхождение: оценивай содержание, участие и интерес по профилю. Выше ранжируй известных и интересных мне исполнителей по актуальному музыкальному профилю и ai-events-review. Если язык существенно влияет на отбор и не подтверждён, уточни оригинал до рекомендации.",
+    "Ищи концерты, сценические выступления и фестивали по текущему профилю. Проверяй программу, исполнителей, язык, даты, площадку и билеты. Персональные исключения и правила широкого включения брать только из профиля.",
 };
+
 const prompt = z.string().trim().min(1).max(12000);
 export const recommendationPromptsSchema = z
   .object({ sport: prompt, walks: prompt, social: prompt, concerts: prompt })
@@ -43,17 +45,45 @@ export type RecommendationSearchSource = {
   description: string;
   method: "telegram" | "aggregator" | "web" | "snapshot";
   enabled: boolean;
+  venue?: {
+    kind: "venue" | "organizer";
+    afishaVenueUrl?: string;
+    priority: "P1" | "P2" | "P3";
+    eventTypes: string[];
+    genres: string[];
+    aliases: string[];
+    searchDomains: string[];
+    pageType: string;
+    calendarAvailability: string;
+    checkedOn: string;
+    pages: {
+      url: string;
+      pageType: string;
+      availability: string;
+      publisherKind?: "venue" | "organizer";
+    }[];
+  };
 };
 export type RecommendationSourcesView = {
   telegram: RecommendationSearchSource[];
   other: RecommendationSearchSource[];
   additional: RecommendationSearchSource[];
+  venues: RecommendationSearchSource[];
+  venueWarning: string | null;
   knowledgeRevision: string | null;
   warning: string | null;
 };
 export const recommendationItemSchema = digestItemSchema.safeExtend({
   group: z.enum(recommendationGroups),
 });
+export const rejectedRecommendationSchema = recommendationItemSchema.safeExtend(
+  {
+    rejectionReason: z.string().trim().min(1).max(2000),
+  },
+);
+export type RejectedRecommendation = z.output<
+  typeof rejectedRecommendationSchema
+>;
 export type RecommendationItem = z.output<typeof recommendationItemSchema>;
 // Personal entries are never part of an LLM publication or its prompt groups.
 export const calendarGroups = [...recommendationGroups, "personal"] as const;
@@ -107,16 +137,24 @@ export type HiddenRecommendation = {
   item: RecommendationItem;
   hiddenAt: string;
 };
+export const recommendationKinds = [
+  "week",
+  "next-week",
+  "concerts-2026",
+] as const;
+export const recommendationKindSchema = z.enum(recommendationKinds);
+export type RecommendationKind = z.output<typeof recommendationKindSchema>;
 export const recommendationInputSchema = z
   .object({
     id: z.uuid(),
     scopeId: z.string().min(1),
-    kind: z.enum(["week", "concerts-2026"]),
+    kind: recommendationKindSchema,
     startDate: z.iso.date(),
     endDate: z.iso.date(),
     requestSummary: z.string().trim().min(1).max(3000),
     notes: z.string().trim().max(10000).default(""),
     items: z.array(recommendationItemSchema).max(500),
+    rejectedItems: z.array(rejectedRecommendationSchema).max(2000).optional(),
     settingsRevision: z.number().int().min(0),
     expectedSnapshotId: z.uuid().nullable(),
   })
@@ -132,6 +170,7 @@ export type RecommendationsView = {
   period: { startDate: string; endDate: string };
   timeZone: string;
   hidden: HiddenRecommendation[];
+  rejected?: RejectedRecommendation[];
   favorites: FavoriteRecommendation[];
   personal: PersonalRecommendation[];
 };
@@ -212,13 +251,19 @@ export function remainingWeek(today: string) {
   }
   return days;
 }
+export function nextWeek(today: string) {
+  const monday = new Date(`${remainingWeek(today).at(-1)!}T12:00:00Z`);
+  monday.setUTCDate(monday.getUTCDate() + 1);
+  return remainingWeek(monday.toISOString().slice(0, 10));
+}
 export function recommendationPeriod(
   kind: RecommendationInput["kind"],
   today: string,
 ) {
-  return kind === "week"
-    ? { startDate: today, endDate: remainingWeek(today).at(-1)! }
-    : { startDate: "2026-01-01", endDate: "2026-12-31" };
+  if (kind === "concerts-2026")
+    return { startDate: "2026-01-01", endDate: "2026-12-31" };
+  const days = kind === "next-week" ? nextWeek(today) : remainingWeek(today);
+  return { startDate: days[0], endDate: days.at(-1)! };
 }
 export function recommendationTime(
   item: CalendarRecommendation,
