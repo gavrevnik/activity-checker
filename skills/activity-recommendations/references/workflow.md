@@ -182,10 +182,13 @@ watermarks; не продвигать их через непрочитанные
 
 ## Агрегаторы и web
 
-Bootstrap даёт актуальные source IDs, provider capabilities и runs. Afisha берёт
-все страницы общего `/ru`; startDate/endDate не являются его серверным фильтром.
-При HTTP 403 использовать [Afisha fallback](afisha-fallback.md): `@afishars`
-для текущего дня и отдельный усиленный web search для будущих дат запроса.
+Bootstrap даёт актуальные source IDs, provider capabilities и runs. Для Afisha
+первичен облачный MCP: `concerts`, `standup`, `festivals`, `cinema` за общий период.
+Только при HTTP 403 от Afisha в облачном reader пробовать локальный sync, затем
+при неудаче использовать доступные карточки, Telegram и web по
+[Afisha workflow](afisha-fallback.md). Локальный адаптер читает все страницы общего
+`/ru`; startDate/endDate не являются его серверным фильтром. Не запускать его
+заранее ради дневной свежести. Отчёт по каждому этапу обязателен в чате и `notes`.
 Исключения категорий применять по актуальному профилю и реальным section/rawCategory,
 а не случайному слову в тексте. Для festivals в AllEvents учитывать категории festivals и food-drinks наряду
 с music/concerts/comedy; не ограничивать годовую выгрузку только музыкой.
