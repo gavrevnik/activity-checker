@@ -5,6 +5,11 @@ const keys = [
   "TELEGRAM_API_HASH",
   "TELEGRAM_PYTHON",
   "TELEGRAM_SESSION_PATH",
+  "TELEGRAM_BOT_TOKEN",
+  "TELEGRAM_BOT_USERNAME",
+  "TELEGRAM_BOT_OWNER_CHAT_ID",
+  "TELEGRAM_BOT_KEYCHAIN_SERVICE",
+  "TELEGRAM_BOT_KEYCHAIN_ACCOUNT",
   "APIFY_TOKEN",
   "TICKETMASTER_API_KEY",
   "FOURSQUARE_API_KEY",
@@ -25,6 +30,7 @@ export function safeError(err: unknown): string {
     if (value && value.length > 3)
       message = message.split(value).join("[скрыто]");
   return message
+    .replace(/bot\d+:[A-Za-z0-9_-]+/g, "bot[скрыто]")
     .replace(/([?&](?:key|apikey|token|access_token)=)[^&\s]+/gi, "$1[скрыто]")
     .slice(0, 800);
 }

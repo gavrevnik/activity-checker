@@ -10,6 +10,7 @@ import {
 } from "../server/providers/telegram/tool.js";
 import { safeError } from "../server/secrets.js";
 import { registerTelegramResearchTools } from "./telegram-research-tools.js";
+import { registerTelegramBotTools } from "./telegram-bot-tools.js";
 
 process.chdir(fileURLToPath(new URL("../", import.meta.url)));
 
@@ -185,5 +186,6 @@ server.registerTool(
 
 registerTelegramResearchTools(server, false);
 registerTelegramBatchTools(server);
+registerTelegramBotTools(server);
 
 await server.connect(new StdioServerTransport());

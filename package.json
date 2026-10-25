@@ -54,7 +54,9 @@
     "prelocal:tool": "node ../personal-radar/connectors/bootstrap-ts.mjs",
     "browser:setup": "playwright install chromium",
     "start:verify": "node --import tsx scripts/start-verify.ts",
-    "prestart:verify": "node ../personal-radar/connectors/bootstrap-ts.mjs"
+    "prestart:verify": "node ../personal-radar/connectors/bootstrap-ts.mjs",
+    "telegram:send": "node --import tsx scripts/telegram-send.ts",
+    "pretelegram:send": "node ../personal-radar/connectors/bootstrap-ts.mjs"
   },
   "dependencies": {
     "@fontsource-variable/golos-text": "^5.3.0",

@@ -364,7 +364,50 @@ npm run telegram:tool -- \
 Два stdio MCP server запускаются отдельно:
 
 - `npm run telegram:discovery:mcp` (старый alias `npm run telegram:mcp`) — `telegram_status`, `telegram_discovery_batch`, `telegram_search_public_chats`, `telegram_channel_recommendations`, query history и relevance marking, а также `telegram_discovery_filter_candidates`, `telegram_channel_info`, `telegram_channel_pinned_messages`, `telegram_discovery_recent_posts`, `telegram_search_channel_messages`, `telegram_group_topics`, `telegram_topic_posts`, `telegram_linked_chat_posts`, `telegram_post_comments`;
-- `npm run telegram:monitoring:mcp` — `telegram_monitoring_status`, `telegram_monitoring_channels`, `telegram_monitoring_posts` и `telegram_search_channel_messages`.
+- `npm run telegram:monitoring:mcp` — `telegram_monitoring_status`, `telegram_monitoring_channels`, `telegram_monitoring_posts`, `telegram_search_channel_messages`, `telegram_bot_status` и `telegram_send_message_to_owner`.
+
+### Отправка сообщения владельцу через Telegram-бота
+
+`telegram_send_message_to_owner` отправляет текст только в заранее настроенный личный
+чат владельца. Нужна явная просьба человека и `confirmed=true`; обычный сбор или
+создание дайджеста сами по себе не разрешают отправку. Общие чаты и другие получатели
+не поддерживаются этим инструментом. Боту нужно предварительно написать или нажать Start.
+
+Настройте `TELEGRAM_BOT_USERNAME` (без `@`) и положительный `TELEGRAM_BOT_OWNER_CHAT_ID`
+в игнорируемом `.env.local`. Токен можно передать через `TELEGRAM_BOT_TOKEN`, либо
+указать `TELEGRAM_BOT_KEYCHAIN_SERVICE` и `TELEGRAM_BOT_KEYCHAIN_ACCOUNT` для существующей
+записи macOS Keychain. Токен читается в память, не копируется между проектами и не
+передаётся через аргументы CLI. Sandbox может блокировать Keychain: тогда тот же CLI
+нужно запускать из обычного Terminal с доступом владельца, не вставляя токен в чат.
+
+`telegram_bot_status` проверяет только наличие настроек, без токена и сетевых запросов;
+`verified=false` не означает ошибку авторизации. Перед отправкой `getMe/getChat`
+проверяют username бота, ID и тип личного чата. У одного бота с OpenClaw общие лимиты
+Bot API; отправитель выдерживает паузу 1,2 секунды между отправками своего процесса/журнала,
+но не координирует лимиты с другими приложениями. HTTP 429 останавливает отправку;
+Stars и paid broadcasts отключены. Polling/webhook/OpenClaw не запускаются и не меняются.
+
+Вход MCP: `{requestId: "<UUID>", text: "Текст и https://t.me/channel/123", confirmed: true}`.
+Один `requestId` на одно сообщение, до 4000 символов UTF-16. HTTP(S)-ссылки и ссылки на
+посты Telegram кликабельны; текст без Markdown/HTML, предпросмотр ссылок выключен.
+Длинную подборку разбить по целым карточкам и сохранить UUID каждой части до отправки.
+
+Для готового приватного файла `{ "messages": [<те же аргументы MCP>, ...] }`:
+
+```sh
+npm run telegram:send -- /absolute/path/messages.json
+```
+
+CLI использует тот же обработчик, что MCP. Журнал `.runtime/telegram-bot/` хранит хеш
+получателя/текста и receipt без текста/токена, отдельно от live SQLite. `sent` с
+`messageId` подтверждает принятие Telegram, но не прочтение человеком. Повтор того же
+UUID/payload возвращает receipt без повторной отправки; другой payload отклоняется.
+После потери ответа/crash статус `unknown`: остановиться и попросить владельца проверить
+Telegram, не создавать новый UUID для слепого повтора. `rejected` содержит безопасный
+код ошибки/`retryAfterSeconds`. Оставшийся после аварии `send.lock` не удаляется
+автоматически: сначала проверить отсутствие отправки в процессе и сохранённые receipts.
+Для новых MCP tools переподключите локальный monitoring MCP; облачный Personal Radar
+этим изменением не обновляется. Все обычные monitoring/discovery операции остаются read-only.
 
 LLM discovery идёт поэтапно: keywords → убрать уже имеющиеся/архивированные/скрытые/исключённые каналы → описание и подтверждённый размер → текущие закрепы без дат → свежие посты → при необходимости рекомендации от релевантных seeds. Семантический отбор выполняет модель, tools не имитируют автоматическую LLM-оценку. Все новые research-tools read-only и не сохраняют карточки. Закрепы возвращаются серверным `inputMessagesFilterPinned`, а не сканированием истории. В обоих MCP точечный поиск использует `messages.search` только внутри явного списка публичных каналов/групп; платный глобальный `channels.searchPosts` остаётся выключенным. Контракты и примеры: [docs/TELEGRAM_DISCOVERY.md](docs/TELEGRAM_DISCOVERY.md). Уже запущенные MCP-процессы нужно переподключить, чтобы появился новый набор tools.
 
