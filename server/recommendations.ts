@@ -378,13 +378,16 @@ export class Recommendations {
       const previous = this.settings();
       if (previous.revision !== data.expectedRevision)
         throw Error("Промпты изменились; перечитайте настройки");
-      const next = { revision: previous.revision + 1, prompts: data.prompts };
+      const next = {
+        revision: this.store.storedRecommendationPreferences().revision + 1,
+        prompts: data.prompts,
+      };
       this.store.db
         .prepare(
           "INSERT INTO settings(key,value) VALUES ('recommendation-prompts',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
         )
         .run(JSON.stringify(next));
-      return next;
+      return this.settings();
     });
   }
   private hydrate(row?: { data: string; updatedAt: string }) {

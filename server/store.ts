@@ -50,6 +50,11 @@ import {
 } from "./profile.js";
 import { defaultRecommendationPrompts } from "../shared/recommendations.js";
 import {
+  profileSourceKey,
+  readRadarProfile,
+  profileContent,
+} from "./radar-profile.js";
+import {
   readTelegramMonitoringSettings,
   saveTelegramMonitoringSettings,
 } from "./telegram-monitoring-settings.js";
@@ -170,6 +175,17 @@ export class Store {
     return s as unknown as Scope;
   }
   profile(): UserProfile {
+    const shared = this.sharedProfile();
+    if (shared)
+      return {
+        ...shared.core,
+        recommendationPrompts: this.storedRecommendationPreferences().prompts,
+        automaticFilters: this.filterRules(),
+        excludedTelegramChannels: readTelegramMonitoringSettings(this.db)
+          .excludedChannels,
+        updatedAt: shared.updatedAt,
+        source: shared.source,
+      };
     const row = this.db
       .prepare("SELECT data,updatedAt FROM user_profile WHERE id='main'")
       .get() as { data: string; updatedAt: string } | undefined;
@@ -192,7 +208,13 @@ export class Store {
       updatedAt: row.updatedAt,
     };
   }
-  recommendationPreferences() {
+  private sharedProfile() {
+    const row = this.db
+      .prepare("SELECT value FROM settings WHERE key=?")
+      .get(profileSourceKey);
+    return row ? readRadarProfile(JSON.parse(String(row.value))) : null;
+  }
+  storedRecommendationPreferences() {
     const row = this.db
       .prepare("SELECT value FROM settings WHERE key='recommendation-prompts'")
       .get() as { value: string } | undefined;
@@ -202,6 +224,24 @@ export class Store {
           prompts: typeof defaultRecommendationPrompts;
         })
       : { revision: 0, prompts: { ...defaultRecommendationPrompts } };
+  }
+  recommendationPreferences() {
+    const saved = this.storedRecommendationPreferences(),
+      shared = this.sharedProfile();
+    if (!shared) return saved;
+    // External Knowledge edits must invalidate an in-flight selection without SQL writes on GET.
+    return {
+      ...saved,
+      revision: Number.parseInt(
+        digest({
+          savedRevision: saved.revision,
+          profile: shared.revision,
+          filters: this.filterRules(),
+          exclusions: readTelegramMonitoringSettings(this.db).excludedChannels,
+        }).slice(0, 12),
+        16,
+      ),
+    };
   }
   saveProfile(input: UserProfileInput): UserProfile {
     const data = userProfileSchema.parse(input);
@@ -215,11 +255,17 @@ export class Store {
     const previousRow = this.db
       .prepare("SELECT data FROM user_profile WHERE id='main'")
       .get() as { data: string } | undefined;
-    const previousCore = previousRow ? JSON.parse(previousRow.data) : null;
+    const shared = this.sharedProfile();
+    const previousCore =
+      shared?.core ?? (previousRow ? JSON.parse(previousRow.data) : null);
     if (core.additionalPreferences === undefined)
       core.additionalPreferences =
         previousCore?.additionalPreferences ?? sampleAdditionalPreferences;
-    const previous = this.recommendationPreferences();
+    if (shared && digest(profileContent(core)) !== shared.revision)
+      throw Error(
+        "Предпочтения хранятся в Personal Radar. Измените общий профиль и пересоберите индексы Knowledge; локальная копия не сохраняется.",
+      );
+    const previous = this.storedRecommendationPreferences();
     const changed =
       Boolean(
         previousCore &&
@@ -262,22 +308,25 @@ export class Store {
           ...readTelegramMonitoringSettings(this.db),
           excludedChannels: excludedTelegramChannels,
         });
-      this.db
-        .prepare(
-          "INSERT INTO user_profile (id,data,updatedAt) VALUES ('main',?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,updatedAt=excluded.updatedAt",
-        )
-        .run(JSON.stringify(core), updatedAt);
-      enqueueCatalogFeedback(
-        this.db,
-        "user_profile",
-        "main:music",
-        "statements",
-        data.musicPreferences,
-      );
+      if (!shared)
+        this.db
+          .prepare(
+            "INSERT INTO user_profile (id,data,updatedAt) VALUES ('main',?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,updatedAt=excluded.updatedAt",
+          )
+          .run(JSON.stringify(core), updatedAt);
+      if (!shared)
+        enqueueCatalogFeedback(
+          this.db,
+          "user_profile",
+          "main:music",
+          "statements",
+          data.musicPreferences,
+        );
     });
     return this.profile();
   }
   private upgradeUserProfile() {
+    if (this.sharedProfile()) return;
     const version = this.db
       .prepare("SELECT value FROM settings WHERE key='user-profile-version'")
       .get() as { value: string } | undefined;

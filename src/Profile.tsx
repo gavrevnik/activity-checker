@@ -68,6 +68,7 @@ function ProfileField({
   hint,
   rows = 7,
   placeholder,
+  readOnly = false,
 }: {
   label: string;
   value: string;
@@ -75,6 +76,7 @@ function ProfileField({
   hint: string;
   rows?: number;
   placeholder?: string;
+  readOnly?: boolean;
 }) {
   const textarea = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => {
@@ -91,6 +93,7 @@ function ProfileField({
         value={value}
         rows={rows}
         placeholder={placeholder}
+        readOnly={readOnly}
         onChange={(event) => onChange(event.target.value)}
       />
       <small>{hint}</small>
@@ -112,6 +115,7 @@ export function Profile({
   const [draft, setDraft] = useState(() => toDraft(profile));
   const [artistsOpen, setArtistsOpen] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const shared = profile.source?.kind === "personal-radar";
   useEffect(() => setDraft(toDraft(profile)), [profile]);
   const input = useMemo(() => toInput(draft), [draft]);
   const original = useMemo(() => {
@@ -160,7 +164,7 @@ export function Profile({
           </Button>
           <Button type="submit" primary disabled={!changed || busy}>
             {busy ? <Busy /> : <Save size={14} />}
-            Сохранить профиль
+            {shared ? "Сохранить настройки отбора" : "Сохранить профиль"}
           </Button>
         </div>
       </div>
@@ -173,10 +177,15 @@ export function Profile({
       <section className="profile-intro">
         <Sparkles size={18} />
         <div>
-          <strong>Как использовать этот профиль</strong>
+          <strong>
+            {shared
+              ? "Общий профиль Personal Radar"
+              : "Как использовать этот профиль"}
+          </strong>
           <p>
-            В списках — один интерес на строку. После сохранения попросите
-            модель обновить рекомендации, чтобы применить изменения.
+            {shared
+              ? "Предпочтения показаны из Personal Radar. Попросите Codex изменить общий профиль; Activity Checker учтёт обновление при следующем отборе. Фильтры и исключения источников ниже можно менять здесь."
+              : "В списках — один интерес на строку. После сохранения попросите модель обновить рекомендации, чтобы применить изменения."}
           </p>
         </div>
       </section>
@@ -192,6 +201,7 @@ export function Profile({
           </header>
           <ProfileField
             label="Обо мне и целях поиска"
+            readOnly={shared}
             value={draft.summary}
             onChange={set("summary")}
             rows={8}
@@ -210,6 +220,7 @@ export function Profile({
           </header>
           <ProfileField
             label="Приоритеты"
+            readOnly={shared}
             value={draft.eventPreferences}
             onChange={set("eventPreferences")}
             hint="Один приоритет на строку."
@@ -226,6 +237,7 @@ export function Profile({
           </header>
           <ProfileField
             label="Какие сообщества искать"
+            readOnly={shared}
             value={draft.communityPreferences}
             onChange={set("communityPreferences")}
             hint="Один тип сообщества на строку."
@@ -242,6 +254,7 @@ export function Profile({
           </header>
           <ProfileField
             label="Музыкальные предпочтения"
+            readOnly={shared}
             value={draft.musicPreferences}
             onChange={set("musicPreferences")}
             hint="Жанры, настроение и предпочтения для концертных рекомендаций."
@@ -257,12 +270,14 @@ export function Profile({
             </summary>
             <div>
               <p>
-                Добавьте любимых исполнителей — модель учтёт их при подборе
-                концертов.
+                {shared
+                  ? "Исполнители из общего музыкального профиля учитываются при подборе концертов."
+                  : "Добавьте любимых исполнителей — модель учтёт их при подборе концертов."}
               </p>
               <ProfileField
                 key={artistsOpen ? "artists-open" : "artists-closed"}
                 label="Любимые артисты"
+                readOnly={shared}
                 value={draft.artists}
                 onChange={set("artists")}
                 hint="Один артист на строку; список по умолчанию свёрнут."
@@ -282,10 +297,15 @@ export function Profile({
           </header>
           <ProfileField
             label="Дополнительные условия рекомендаций"
+            readOnly={shared}
             value={draft.additionalPreferences}
             onChange={set("additionalPreferences")}
             rows={10}
-            hint="Это ваши условия. Можно изменить или удалить любые предпочтения образца, включая приоритет русского языка."
+            hint={
+              shared
+                ? "Общие условия и критерии из Personal Radar."
+                : "Это ваши условия. Можно изменить или удалить любые предпочтения образца, включая приоритет русского языка."
+            }
           />
           <div className="profile-filter-options">
             <h3>Автоматические фильтры</h3>
@@ -341,7 +361,9 @@ export function Profile({
       </div>
 
       <p className="profile-updated">
-        Последнее сохранение: {updatedAt} · сохранено на этом компьютере
+        {shared ? "Данные Personal Radar обновлены" : "Последнее сохранение"}:{" "}
+        {updatedAt}
+        {!shared && " · сохранено на этом компьютере"}
       </p>
     </form>
   );

@@ -62,8 +62,8 @@ function bootstrap(
     { status: 200, headers: { "set-cookie": "session=abc; Path=/" } },
   );
 }
-function day(offset = 0) {
-  const current = new Date(`${localDay()}T12:00:00Z`);
+function day(offset = 0, timeZone = "Europe/Belgrade") {
+  const current = new Date(`${localDay(new Date(), timeZone)}T12:00:00Z`);
   current.setUTCDate(current.getUTCDate() + offset);
   return current.toISOString().slice(0, 10);
 }
@@ -257,8 +257,8 @@ it("selects Chisinau in bootstrap, API body and Referer and keeps MD geography",
     );
   const options = {
     confirmed: false,
-    startDate: day(),
-    endDate: day(14),
+    startDate: day(0, ctx.scope.timezone),
+    endDate: day(14, ctx.scope.timezone),
     categories: ["music"],
   };
   const plan = await allEvents.planSync!(ctx, options);

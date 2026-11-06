@@ -330,6 +330,11 @@ export const userProfileSchema = z
 export type UserProfileInput = z.input<typeof userProfileSchema>;
 export interface UserProfile extends z.output<typeof userProfileSchema> {
   updatedAt: string;
+  source?: {
+    kind: "personal-radar";
+    readOnly: true;
+    preferenceIds: string[];
+  };
 }
 export interface Credential {
   key: string;
